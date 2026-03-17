@@ -1,0 +1,10 @@
+[deps]
+GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+XML = "72c71f33-b9b6-44de-8c94-c961784809e2"
+
+[compat]
+GeoInterface = "1"
+Test = "1"
+XML = "0.3"
