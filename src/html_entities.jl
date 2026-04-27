@@ -2,7 +2,7 @@ module HtmlEntities
 
 export decode_named_entities
 
-using Automa, Downloads, JSON3, Serialization, Scratch
+using Automa, Downloads, JSON, Serialization, Scratch
 
 # ────────────────────────────────────────────────────────────────────
 # 1.  Scratch-space cache
@@ -24,12 +24,11 @@ function _load_entities()
     end
 
     # Slow path: download the JSON and build the Dict once
-    json = JSON3.read(read(Downloads.download(ENTITY_URL), String))
+    json = JSON.parse(read(Downloads.download(ENTITY_URL), String))
     tbl = Dict{String,String}()
-    for (ksym, v) in json               # ksym :: Symbol  (e.g. :&le;)
-        k = String(ksym)                # "≤"   ← now a String
+    for (k, v) in json                  # k :: String  (e.g. "&le;")
         name = k[2:end-1]               # strip leading '&' and trailing ';'
-        cps = collect(v["codepoints"])  # JSON3.Array → Vector{Int}
+        cps = collect(v["codepoints"])  # Vector{Any} of Int
         tbl[name] = String(Char.(cps))  # "≤"  (or multi-char)
     end
 
