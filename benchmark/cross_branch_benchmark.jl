@@ -1,13 +1,13 @@
 #!/usr/bin/env julia
 
-# Cross-branch benchmark script for KML.jl
+# Cross-branch benchmark script for FastKML.jl
 # Final version with all fixes
 
 using Pkg
 using BenchmarkTools
 using Statistics
 using Dates
-using KML
+using FastKML
 
 # Try to load optional packages
 const HAS_DATAFRAMES = try
@@ -77,31 +77,31 @@ function detect_features()
     features = Dict{String, Bool}()
     
     # Check for LazyKMLFile
-    features["LazyKMLFile"] = isdefined(KML, :LazyKMLFile)
+    features["LazyKMLFile"] = isdefined(FastKML, :LazyKMLFile)
     
     # Check for DataFrame support - only if PlacemarkTable exists or extension is loaded
     if HAS_DATAFRAMES
-        features["DataFrame"] = isdefined(KML, :PlacemarkTable) || 
-                               (isdefined(Base, :get_extension) && Base.get_extension(KML, :KMLDataFramesExt) !== nothing)
+        features["DataFrame"] = isdefined(FastKML, :PlacemarkTable) || 
+                               (isdefined(Base, :get_extension) && Base.get_extension(FastKML, :FastKMLDataFramesExt) !== nothing)
     else
         features["DataFrame"] = false
     end
     
     # Check for Tables.jl interface
     if HAS_TABLES
-        features["Tables"] = Tables.istable(KML.KMLFile)
+        features["Tables"] = Tables.istable(FastKML.KMLFile)
     else
         features["Tables"] = false
     end
     
     # Check for PlacemarkTable
-    features["PlacemarkTable"] = isdefined(KML, :PlacemarkTable)
+    features["PlacemarkTable"] = isdefined(FastKML, :PlacemarkTable)
     
     return features
 end
 
 # Extract placemarks manually (improved for both branches)
-function extract_placemarks_manual(kml::KML.KMLFile)
+function extract_placemarks_manual(kml::FastKML.KMLFile)
     placemarks = []
     
     # Helper function to recursively find placemarks
@@ -109,9 +109,9 @@ function extract_placemarks_manual(kml::KML.KMLFile)
         # Check for Features field (capital F)
         if isdefined(container, :Features) && container.Features !== nothing
             for feature in container.Features
-                if isa(feature, KML.Placemark)
+                if isa(feature, FastKML.Placemark)
                     push!(placemarks, feature)
-                elseif isa(feature, KML.Document) || isa(feature, KML.Folder)
+                elseif isa(feature, FastKML.Document) || isa(feature, FastKML.Folder)
                     find_placemarks!(feature, placemarks)
                 end
             end
@@ -120,9 +120,9 @@ function extract_placemarks_manual(kml::KML.KMLFile)
         # Check for features field (lowercase f)
         if isdefined(container, :features) && container.features !== nothing
             for feature in container.features
-                if isa(feature, KML.Placemark)
+                if isa(feature, FastKML.Placemark)
                     push!(placemarks, feature)
-                elseif isa(feature, KML.Document) || isa(feature, KML.Folder)
+                elseif isa(feature, FastKML.Document) || isa(feature, FastKML.Folder)
                     find_placemarks!(feature, placemarks)
                 end
             end
@@ -131,9 +131,9 @@ function extract_placemarks_manual(kml::KML.KMLFile)
         # Check for children field
         if isdefined(container, :children) && container.children !== nothing
             for child in container.children
-                if isa(child, KML.Placemark)
+                if isa(child, FastKML.Placemark)
                     push!(placemarks, child)
-                elseif isa(child, KML.Document) || isa(child, KML.Folder)
+                elseif isa(child, FastKML.Document) || isa(child, FastKML.Folder)
                     find_placemarks!(child, placemarks)
                 end
             end
@@ -143,9 +143,9 @@ function extract_placemarks_manual(kml::KML.KMLFile)
     # Search in KML file children
     if isdefined(kml, :children) && kml.children !== nothing
         for child in kml.children
-            if isa(child, KML.Placemark)
+            if isa(child, FastKML.Placemark)
                 push!(placemarks, child)
-            elseif isa(child, KML.Document) || isa(child, KML.Folder)
+            elseif isa(child, FastKML.Document) || isa(child, FastKML.Folder)
                 find_placemarks!(child, placemarks)
             end
         end
@@ -154,9 +154,9 @@ function extract_placemarks_manual(kml::KML.KMLFile)
     # Also try direct Features if KMLFile has them
     if isdefined(kml, :Features) && kml.Features !== nothing
         for feature in kml.Features
-            if isa(feature, KML.Placemark)
+            if isa(feature, FastKML.Placemark)
                 push!(placemarks, feature)
-            elseif isa(feature, KML.Document) || isa(feature, KML.Folder)
+            elseif isa(feature, FastKML.Document) || isa(feature, FastKML.Folder)
                 find_placemarks!(feature, placemarks)
             end
         end
@@ -167,12 +167,12 @@ end
 
 # Main benchmark function
 println("="^80)
-println("KML.jl Cross-Branch Benchmark")
+println("FastKML.jl Cross-Branch Benchmark")
 println("="^80)
 
 # Get branch info
 try
-    kml_path = dirname(dirname(pathof(KML)))
+    kml_path = dirname(dirname(pathof(FastKML)))
     branch = chomp(read(`git -C $kml_path rev-parse --abbrev-ref HEAD`, String))
     commit = chomp(read(`git -C $kml_path rev-parse --short HEAD`, String))
     println("\nBranch: $branch (commit: $commit)")
@@ -191,7 +191,7 @@ println("  Tables: $(HAS_TABLES ? "✓" : "✗")")
 println("  JSON: $(HAS_JSON ? "✓" : "✗")")
 
 # Detect features
-println("\nDetecting KML.jl features...")
+println("\nDetecting FastKML.jl features...")
 features = detect_features()
 for (feature, available) in features
     println("  $feature: $(available ? "✓" : "✗")")
@@ -222,7 +222,7 @@ for (size_name, n_placemarks) in test_sizes
     
     # Benchmark KMLFile reading
     GC.gc()
-    bench = @benchmark read($test_file, KML.KMLFile) samples=5 seconds=3
+    bench = @benchmark read($test_file, FastKML.KMLFile) samples=5 seconds=3
     time_ms = median(bench).time / 1e6
     memory_mb = median(bench).memory / 1024^2
     
@@ -254,12 +254,12 @@ if features["DataFrame"] && HAS_DATAFRAMES
         method_used = ""
         bench = nothing
         
-        if isdefined(KML, :PlacemarkTable) && hasmethod(DataFrame, (KML.PlacemarkTable,))
+        if isdefined(FastKML, :PlacemarkTable) && hasmethod(DataFrame, (FastKML.PlacemarkTable,))
             # Via PlacemarkTable (parsing_perf_enhancement branch)
             GC.gc()
-            bench = @benchmark DataFrame(KML.PlacemarkTable($test_file; layer=1)) samples=3 seconds=3
+            bench = @benchmark DataFrame(FastKML.PlacemarkTable($test_file; layer=1)) samples=3 seconds=3
             method_used = "DataFrame(PlacemarkTable(file))"
-        elseif isdefined(Base, :get_extension) && Base.get_extension(KML, :KMLDataFramesExt) !== nothing
+        elseif isdefined(Base, :get_extension) && Base.get_extension(FastKML, :FastKMLDataFramesExt) !== nothing
             # Check if KMLDataFramesExt extension is loaded
             GC.gc()
             bench = @benchmark DataFrame($test_file; layer=1) samples=3 seconds=3
@@ -268,7 +268,7 @@ if features["DataFrame"] && HAS_DATAFRAMES
             # This shouldn't happen if features["DataFrame"] is true, but fallback to manual
             GC.gc()
             bench = @benchmark begin
-                kml = read($test_file, KML.KMLFile)
+                kml = read($test_file, FastKML.KMLFile)
                 placemarks = extract_placemarks_manual(kml)
                 if !isempty(placemarks)
                     DataFrame(
@@ -300,9 +300,9 @@ if features["DataFrame"] && HAS_DATAFRAMES
         safe_cleanup(test_file)
     end
 elseif HAS_DATAFRAMES
-    # DataFrames is loaded but KML doesn't have integration - do manual extraction benchmark
+    # DataFrames is loaded but FastKML doesn't have integration - do manual extraction benchmark
     println("\n" * "="^80)
-    println("BENCHMARK 2: Manual DataFrame extraction (no KML integration detected)")
+    println("BENCHMARK 2: Manual DataFrame extraction (no FastKML integration detected)")
     println("="^80)
     
     benchmark2_results = []
@@ -317,7 +317,7 @@ elseif HAS_DATAFRAMES
         # Manual extraction benchmark
         GC.gc()
         bench = @benchmark begin
-            kml = read($test_file, KML.KMLFile)
+            kml = read($test_file, FastKML.KMLFile)
             placemarks = extract_placemarks_manual(kml)
             if !isempty(placemarks)
                 DataFrame(

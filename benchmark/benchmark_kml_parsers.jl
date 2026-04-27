@@ -1,6 +1,6 @@
 ###############################################################################
 # benchmark_tables.jl
-# Compare KML.jl vs ArchGDAL.jl while materialising the whole file
+# Compare FastKML.jl vs ArchGDAL.jl while materialising the whole file
 # as a Tables.jl‑compatible DataFrame.
 ###############################################################################
 
@@ -8,7 +8,7 @@ using Scratch
 using Downloads, ZipArchives
 using URIs: URI
 import XML: XML, read as xmlread, parse as xmlparse, write as xmlwrite, Node, LazyNode, nodetype
-import KML
+import FastKML
 using ArchGDAL
 using Tables, DataFrames
 using BenchmarkTools
@@ -32,9 +32,9 @@ URL5 = "https://earthquake.usgs.gov/static/lfs/nshm/qfaults/qfaults.kmz"
 URL6 = "https://ordsext.epa.gov/FLA/www3/national_frs.kmz"
 # ???
 URL7 = "https://www.neonscience.org/sites/default/files/NEON_Field_Sites_KMZ_v20_May2025.kmz"
-#! WIP: Does not work with KML.jl because of NetworkLink elements not handled yet
+#! WIP: Does not work with FastKML.jl because of NetworkLink elements not handled yet
 URL8 = "https://infoterre.brgm.fr/sites/default/files/upload/kml/kml_geo_1000.kml"
-#! WIP: Geometry appears to be line strings via Google Earth, but KML.jl extracts points
+#! WIP: Geometry appears to be line strings via Google Earth, but FastKML.jl extracts points
 URL9 = "https://pubs.usgs.gov/of/2007/1264/SteepestDescents_Kilauea1983_10m_cell7500.KMZ"
 
 
@@ -131,9 +131,9 @@ end
 # ──────────────────────── parsing pipelines ───────────────────────────────── #
 
 """
-Full `read → convert → DataFrame` with KML.jl
+Full `read → convert → DataFrame` with FastKML.jl
 """
-table_with_kml(path; i::Integer = 1) = DataFrame(path; layer = i)
+table_with_fastkml(path; i::Integer = 1) = DataFrame(path; layer = i)
 
 """
 Full `read → convert → DataFrame` with ArchGDAL.jl
@@ -183,7 +183,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
     print(HEADER_INFO_CRAYON("Using KML file: "))
     println(FILE_PATH_CRAYON(kml_file_path))
 
-    df_kml = table_with_kml(kml_file_path)
+    df_fastkml = table_with_fastkml(kml_file_path)
     df_gdal = table_with_archgdal(kml_file_path)
 
     # --- Helper function to print differences for a vector comparison ---
@@ -193,7 +193,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
         len1, len2 = length(vec1), length(vec2)
         # Report length mismatch as a primary difference
         if len1 != len2
-            println(crayon_msg("  Length mismatch for $label: KML.jl has $len1 rows, ArchGDAL.jl has $len2 rows."))
+            println(crayon_msg("  Length mismatch for $label: FastKML.jl has $len1 rows, ArchGDAL.jl has $len2 rows."))
             # Even with length mismatch, we'll show element differences up to max_iter_len
         end
 
@@ -203,7 +203,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
             item1_exists = i <= len1
             item2_exists = i <= len2
 
-            val1 = item1_exists ? vec1[i] : "< KML.jl: value not present at row $i >"
+            val1 = item1_exists ? vec1[i] : "< FastKML.jl: value not present at row $i >"
             val2 = item2_exists ? vec2[i] : "< ArchGDAL.jl: value not present at row $i >"
 
             # Check if items are different
@@ -227,7 +227,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
                     disp1 = length(s_val1) > truncate_len ? first(s_val1, truncate_len) * "..." : s_val1
                     disp2 = length(s_val2) > truncate_len ? first(s_val2, truncate_len) * "..." : s_val2
 
-                    println(crayon_msg("  Row $i: KML.jl='$(disp1)', ArchGDAL.jl='$(disp2)'"))
+                    println(crayon_msg("  Row $i: FastKML.jl='$(disp1)', ArchGDAL.jl='$(disp2)'"))
                 end
             end
         end
@@ -249,50 +249,50 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
     overall_match = true
 
     # 1. Check row counts
-    if nrow(df_kml) != nrow(df_gdal)
+    if nrow(df_fastkml) != nrow(df_gdal)
         overall_match = false
-        println(ERROR_CRAYON("❌ Row counts differ: KML.jl has $(nrow(df_kml)) rows, ArchGDAL.jl has $(nrow(df_gdal)) rows."))
+        println(ERROR_CRAYON("❌ Row counts differ: FastKML.jl has $(nrow(df_fastkml)) rows, ArchGDAL.jl has $(nrow(df_gdal)) rows."))
     end
 
     # 2. Compare 'name' column
-    kml_geomsnames = df_kml.name
+    fastkml_geomsnames = df_fastkml.name
     gdal_geomsnames = df_gdal.Name
-    if !isequal(kml_geomsnames, gdal_geomsnames)
+    if !isequal(fastkml_geomsnames, gdal_geomsnames)
         overall_match = false
         println(ERROR_CRAYON("❌ 'name' column differs:"))
-        print_differences("Names", kml_geomsnames, gdal_geomsnames, ERROR_MSG_CRAYON)
+        print_differences("Names", fastkml_geomsnames, gdal_geomsnames, ERROR_MSG_CRAYON)
     end
 
     # 3. Compare 'description' column
-    kml_geomsdescr = strip.(replace.(df_kml.description, r"[\r\n]+" => " "))
+    fastkml_geomsdescr = strip.(replace.(df_fastkml.description, r"[\r\n]+" => " "))
     gdal_geomsdescr = df_gdal.Description
-    if !isequal(kml_geomsdescr, gdal_geomsdescr)
+    if !isequal(fastkml_geomsdescr, gdal_geomsdescr)
         overall_match = false
         println(ERROR_CRAYON("❌ 'description' column differs:"))
-        print_differences("Descriptions", kml_geomsdescr, gdal_geomsdescr, ERROR_MSG_CRAYON, 3, 70)
+        print_differences("Descriptions", fastkml_geomsdescr, gdal_geomsdescr, ERROR_MSG_CRAYON, 3, 70)
     end
 
     # 4. Compare geometry columns
-    # Assuming 'geometry' column exists in df_kml and geometry is the first column in df_gdal.
+    # Assuming 'geometry' column exists in df_fastkml and geometry is the first column in df_gdal.
 
     # 4a. Compare geometry columns (as WKT)
-    kml_wktgeoms = WKT.getwkt.(df_kml.geometry)
+    fastkml_wktgeoms = WKT.getwkt.(df_fastkml.geometry)
     gdal_wktgeoms = WKT.getwkt.(df_gdal[:, 1])
-    if !isequal(kml_wktgeoms, gdal_wktgeoms)
+    if !isequal(fastkml_wktgeoms, gdal_wktgeoms)
         overall_match = false
         println(ERROR_CRAYON("❌ Geometry column (as WKT) differs:"))
-        print_differences("Geometries (WKT)", kml_wktgeoms, gdal_wktgeoms, ERROR_MSG_CRAYON, 3, 100)
+        print_differences("Geometries (WKT)", fastkml_wktgeoms, gdal_wktgeoms, ERROR_MSG_CRAYON, 3, 100)
     end
 
     # 4b. Compare geometry columns (coordinates)
     # GI (GeoInterface) should be imported in your script.
-    kml_coords = GI.coordinates.(df_kml.geometry)
+    fastkml_coords = GI.coordinates.(df_fastkml.geometry)
     gdal_coords = GI.coordinates.(df_gdal[:, 1])
-    if !isequal(kml_coords, gdal_coords)
+    if !isequal(fastkml_coords, gdal_coords)
         overall_match = false
         println(ERROR_CRAYON("❌ Geometry column (coordinates) differs:"))
         # Coordinates can be verbose; adjust truncate_len as needed.
-        print_differences("Geometries (Coordinates)", kml_coords, gdal_coords, ERROR_MSG_CRAYON, 3, 120)
+        print_differences("Geometries (Coordinates)", fastkml_coords, gdal_coords, ERROR_MSG_CRAYON, 3, 120)
     end
 
     # Final summary message
@@ -301,7 +301,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
             SUCCESS_CRAYON(
                 "✔  Tables appear identical for compared columns (name, description, geometry WKT & coordinates): ",
             ),
-            nrow(df_kml),
+            nrow(df_fastkml),
             " rows.",
         )
     else
@@ -311,7 +311,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
     # ────────────────────────── benchmarking ──────────────────────────────────── #
 
     println(BENCHMARK_SECTION_CRAYON("Starting benchmarks..."))
-    bench_kml_result = @benchmark table_with_kml($kml_file_path) seconds = benchmark_seconds
+    bench_fastkml_result = @benchmark table_with_fastkml($kml_file_path) seconds = benchmark_seconds
     bench_gdal_result = @benchmark table_with_archgdal($kml_file_path) seconds = benchmark_seconds
 
     # ────────────────────────── print results ─────────────────────────────────── #
@@ -319,15 +319,15 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
     println(BENCHMARK_SECTION_CRAYON("Benchmark results (including conversion → DataFrame):"))
 
     # Calculate values first
-    kml_time_ms = median(bench_kml_result).time / 1e6
+    fastkml_time_ms = median(bench_fastkml_result).time / 1e6
     gdal_time_ms = median(bench_gdal_result).time / 1e6
-    kml_mem_kib = round(Int, median(bench_kml_result).memory / 1024)
+    fastkml_mem_kib = round(Int, median(bench_fastkml_result).memory / 1024)
     gdal_mem_kib = round(Int, median(bench_gdal_result).memory / 1024)
 
     # Print table header
     print(TABLE_HEADER_CRAYON(rpad("Metric", 30)))
     print(" ") # Separator space
-    print(TABLE_HEADER_CRAYON(lpad("KML.jl", 15)))
+    print(TABLE_HEADER_CRAYON(lpad("FastKML.jl", 15)))
     print(" ") # Separator space
     print(TABLE_HEADER_CRAYON(lpad("ArchGDAL.jl", 15)))
     println() # Newline
@@ -336,10 +336,10 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
 
     # Print data rows
     print(METRIC_NAME_CRAYON(rpad("Median elapsed time (ms)", 30)))
-    Printf.@printf " %15.2f %15.2f\n" kml_time_ms gdal_time_ms
+    Printf.@printf " %15.2f %15.2f\n" fastkml_time_ms gdal_time_ms
 
     print(METRIC_NAME_CRAYON(rpad("Memory (KiB)", 30)))
-    Printf.@printf " %15d %15d\n" kml_mem_kib gdal_mem_kib
+    Printf.@printf " %15d %15d\n" fastkml_mem_kib gdal_mem_kib
 
     println(SEPARATOR_CRAYON(rpad("", 80, '─')))
     println() # Add a blank line for separation if calling multiple times

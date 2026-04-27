@@ -1,5 +1,5 @@
 # Download and read public KML sample
-using KML, DataFrames, Downloads
+using FastKML, DataFrames, Downloads
 
 # Google's KML samples - specify extension for proper detection
 url = "https://developers.google.com/kml/documentation/KML_Samples.kml"
@@ -15,7 +15,7 @@ df = DataFrame(kml)
 display(df)
 
 # Direct visualization with USGS earthquake data
-using KML, GeoMakie, GLMakie, Downloads
+using FastKML, GeoMakie, GLMakie, Downloads
 
 # Download USGS earthquake KML (past 30 days, magnitude 2.5+)
 url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month_depth_animated.kml"
@@ -49,5 +49,5 @@ filter(row -> !ismissing(row.geometry), df) |> display
 
 # Handle geometry type conflicts gracefully
 using GeometryBasics  # Defines Point, LineString, etc.
-using KML  # Warns about conflicts and suggests solutions
-# Use KML.Point to disambiguate
+using FastKML  # Warns about conflicts and suggests solutions
+# Use FastKML.Point to disambiguate
