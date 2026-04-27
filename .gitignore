@@ -1,3 +1,5 @@
 *Manifest.toml
 *generated.jl
 *.DS_Store
+*.cov
+*.mem
