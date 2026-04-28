@@ -12,6 +12,10 @@ integrations that were out of scope upstream. It is built on top of
 node representations are what make `KMLFile` and `LazyKMLFile` possible — with:
 
 - An [`Automa.jl`](https://github.com/BioJulia/Automa.jl)-based coordinate parser.
+- Lenient handling of non-conformant inputs — files produced by KMLer,
+  MapGuide and similar generators (where tuples are joined by commas
+  rather than the spec-mandated whitespace) are parsed correctly. See the
+  [Coordinate parsing](docs/src/coordinate_parsing.md) chapter for details.
 - A `LazyKMLFile` mode (powered by `XML.LazyNode`) that defers materialization for large files.
 - KMZ (zipped KML) support via a `ZipArchives` weak-dependency extension.
 - Multi-layer awareness (`Document` / `Folder` introspection).

@@ -1,0 +1,9 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+FastKML = "74919eb4-6d7e-4564-b3b0-39766c648c5e"
+
+[compat]
+Documenter = "1"
+
+[sources]
+FastKML = {path = ".."}
