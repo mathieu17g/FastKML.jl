@@ -4,13 +4,25 @@ Open items accumulated during development. Add to it; tick off as you go.
 
 ## Benchmark — investigation
 
-- [ ] Run anisotropic URLs (`URL1`, `URL3`, `URL6`) with the improved
-      diagnostics (`diff @ char N` window, WKT `.val`) and characterize the
-      MultiGeometry/MultiPolygon divergence between FastKML and ArchGDAL.
-      Decide row-by-row which interpretation is correct against the source
-      KML — some appear to be ArchGDAL splitting one polygon ring into N
-      degenerate single-vertex polygons, which would mean FastKML is
-      right; verify on the raw XML.
+- [x] **URL1 (`USEDO.kmz`) — resolved.** Source is non-conformant KML:
+      coordinates use comma-only delimiters with no whitespace between
+      tuples (`lon1,lat1,0,lon2,lat2,0,…`). FastKML's parser is lenient
+      by design and recovers the correct geometry; ArchGDAL is strict
+      and reduces each ring to a single point. Not a FastKML bug.
+      Documented in `docs/src/coordinate_parsing.md` and tested in
+      `test/runtests.jl`.
+- [ ] **URL3 (`Aglim1.kmz`) — pending.** Same upstream domain (ESDAC,
+      KMLer-generated) and same WIP note as URL1, so very likely the
+      same root cause. Verify once and either remove from the diverging
+      list or document as a known shared case.
+- [ ] **URL6 (`national_frs.kmz`) — pending.** Diverges on **row count**
+      rather than per-row geometry; the WIP note even suggests ArchGDAL
+      itself struggles on this file. Different category from URL1/URL3
+      and worth a fresh look.
+- [ ] After URL3/URL6, sweep across the improved diagnostics
+      (`diff @ char N`, WKT `.val`) on any other anisotropic file we
+      come across and decide row-by-row which interpretation is correct
+      against the raw XML.
 - [ ] Investigate URL4 (`WRS-2_bound_world_0.kml`, 28k flat Placemarks):
       FastKML is ~14% slower than ArchGDAL there, while it is 25–99%
       faster on URL2 and URL5. Likely a hot path in `xml_parsing.jl` for

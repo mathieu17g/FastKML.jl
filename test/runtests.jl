@@ -148,4 +148,15 @@ end
     # Test with whitespace variations
     coords = FastKML.Coordinates.parse_coordinates_automa("  1.5 , 2.5  \n  3.5 , 4.5  ")
     @test coords == [SVector(1.5, 2.5), SVector(3.5, 4.5)]
+
+    # Non-conformant input — comma-only delimiters with no whitespace between
+    # tuples. Encountered in real-world KMLs produced by tools like KMLer
+    # (e.g. ESDAC's USEDO.kmz). FastKML's parser is intentionally lenient and
+    # should still recover the correct triplets.
+    coords = FastKML.Coordinates.parse_coordinates_automa("28.25,69.06,0,28.26,69.07,0,28.27,69.08,0")
+    @test coords == [SVector(28.25, 69.06, 0.0), SVector(28.26, 69.07, 0.0), SVector(28.27, 69.08, 0.0)]
+
+    # Same leniency for 2D pairs
+    coords = FastKML.Coordinates.parse_coordinates_automa("1.0,2.0,3.0,4.0")
+    @test coords == [SVector(1.0, 2.0), SVector(3.0, 4.0)]
 end
