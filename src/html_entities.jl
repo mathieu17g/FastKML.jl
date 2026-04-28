@@ -61,13 +61,19 @@ make_tokenizer(patterns) |> eval    # defines `tokenize(UInt32, str)`
 Replace **named** HTML entities (e.g. `&amp;`, `&le;`) in `str`
 with their Unicode characters.
 Numeric entities and unknown names are copied verbatim.
+
+The Automa tokenizer reports byte (not char) positions, so we slice on
+`codeunits(str)` rather than `str` itself; that way tokens whose
+boundaries fall inside a multi-byte UTF-8 character (e.g. a non-breaking
+space) don't trip Julia's char-boundary validation.
 """
 function decode_named_entities(str::AbstractString)::String
     out = IOBuffer()
+    bytes = codeunits(str)
     for (pos, len, tok) in tokenize(UInt32, str)
-        frag = @view str[pos:pos+len-1]
-        if tok == 3                       # named entity
-            name = frag[2:end-1]          # strip '&' and ';'
+        frag = @view bytes[pos:pos+len-1]
+        if tok == 3                       # named entity (always ASCII per the regex)
+            name = String(@view frag[2:end-1])  # strip leading '&' and trailing ';'
             write(out, get(NAMED_HTML_ENTITIES, name, frag))
         else                              # numeric / text / stray '&'
             write(out, frag)

@@ -160,3 +160,28 @@ end
     coords = FastKML.Coordinates.parse_coordinates_automa("1.0,2.0,3.0,4.0")
     @test coords == [SVector(1.0, 2.0), SVector(3.0, 4.0)]
 end
+
+@testset "HTML entity decoding" begin
+    decode = FastKML.HtmlEntities.decode_named_entities
+
+    # Named entities are decoded
+    @test decode("&amp;") == "&"
+    @test decode("&lt;a&amp;b&gt;") == "<a&b>"
+    @test decode("&le;") == "≤"
+
+    # Numeric entities and unknown names are copied verbatim (per docstring)
+    @test decode("&#65;") == "&#65;"
+    @test decode("&unknown;") == "&unknown;"
+
+    # Plain text passes through
+    @test decode("hello world") == "hello world"
+    @test decode("") == ""
+
+    # Multi-byte UTF-8 in the input must NOT trip Julia's char-boundary
+    # validation when a token span ends inside a multi-byte char. This case
+    # was triggered by EPA's national_frs.kmz, where descriptions contain
+    # non-breaking spaces (U+00A0, 2 bytes in UTF-8) adjacent to entities.
+    @test decode("foo &amp;bar") == "foo &bar"
+    @test decode("≤&amp;≥") == "≤&≥"
+    @test decode("a b") == "a b"  # multi-byte char with no entities
+end
