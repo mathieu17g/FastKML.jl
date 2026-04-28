@@ -313,9 +313,15 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
         println(ERROR_CRAYON("❌ Row counts differ: FastKML.jl has $(nrow(df_fastkml)) rows, ArchGDAL.jl has $(nrow(df_gdal)) rows."))
     end
 
-    # 2. Compare 'name' column
-    fastkml_geomsnames = df_fastkml.name
-    gdal_geomsnames = df_gdal.Name
+    # 2. Compare 'name' column.
+    # Symmetric normalization on both sides: strip leading/trailing
+    # whitespace, then resolve named HTML entities. ArchGDAL preserves the
+    # raw text of `<name>`, while FastKML strips and runs decode_named_entities;
+    # without symmetry, every name with leading whitespace or with a
+    # non-conformant uppercase entity (e.g. "DAY &AMP; DAY") would be
+    # flagged as a content mismatch.
+    fastkml_geomsnames = strip.(FastKML.HtmlEntities.decode_named_entities.(df_fastkml.name))
+    gdal_geomsnames    = strip.(FastKML.HtmlEntities.decode_named_entities.(df_gdal.Name))
     if !isequal(fastkml_geomsnames, gdal_geomsnames)
         overall_match = false
         println(ERROR_CRAYON("❌ 'name' column differs:"))

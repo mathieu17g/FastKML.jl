@@ -22,11 +22,11 @@ Open items accumulated during development. Add to it; tick off as you go.
       Z (POLYGON Z (...))` via ArchGDAL — both are valid OGC Simple
       Features WKT representations of the same data, but downstream
       consumers that branch on geometry type will see them as distinct.
-- [x] **URL6 (`national_frs.kmz`) — resolved.** Two distinct findings:
+- [x] **URL6 (`national_frs.kmz`) — resolved.** Three distinct findings:
       (i) FastKML had a real bug in `decode_named_entities` (sliced on
       char index instead of byte index, crashing on multi-byte UTF-8
-      next to entities) — fixed in 889a275, with regression tests; (ii)
-      the row count mismatch (FastKML 163k vs ArchGDAL 4) was a
+      next to entities) — fixed in 889a275, with regression tests;
+      (ii) the row count mismatch (FastKML 163k vs ArchGDAL 4) was a
       **layer-semantics divergence**, not a bug. FastKML exposes 3
       top-level Document/Folder layers (the first contains all 163k
       placemarks recursively); ArchGDAL flattens to 19 122 leaf-folder
@@ -35,6 +35,16 @@ Open items accumulated during development. Add to it; tick off as you go.
       ArchGDAL layers by default. Also extended the description
       normalization to `\s+` (was `[\r\n]+`) so tab-run differences in
       EPA's HTML descriptions aren't reported as content mismatches.
+      (iii) After (i)+(ii), 49 small name-column diffs remained: one
+      with a leading whitespace (FastKML preserves; ArchGDAL strips) and
+      48 with `&AMP;` vs `&` (the source uses the non-conformant
+      uppercase HTML5 entity; FastKML decodes via `NAMED_HTML_ENTITIES`,
+      ArchGDAL preserves raw). Resolved by symmetric name-column
+      normalization in the benchmark: `strip` + `decode_named_entities`
+      on both sides. Plus one residual: row 48072 has malformed
+      `<coordinates>,,0</coordinates>` — FastKML returns `Float64[]`,
+      ArchGDAL substitutes `(0,0,0)`. This is a genuine fallback-policy
+      difference on invalid input; documented as accepted divergence.
 - [ ] After URL3/URL6, sweep across the improved diagnostics
       (`diff @ char N`, WKT `.val`) on any other diverging (non-iso)
       file we come across and decide row-by-row which interpretation is
