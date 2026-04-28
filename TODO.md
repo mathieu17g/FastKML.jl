@@ -56,11 +56,26 @@ Open items accumulated during development. Add to it; tick off as you go.
 
 ## Performance
 
-- [ ] Profile memory allocations with `julia --track-allocation=user` on
-      URL2 or URL5 (`*.mem` files); identify hot sites in `tables.jl`,
-      `Layers.jl`, `xml_parsing.jl`. FastKML allocates 35–58× more than
-      ArchGDAL on the iso URLs benchmarked so far (cumulative
-      `BenchmarkTools.memory`, not peak RSS — but still very high).
+- [ ] Memory allocation profile (round 1 done; more rounds welcome).
+    - Tooling: `benchmark/profile_memory.jl` runs the hot path (DataFrame
+      extraction) on a representative file with `--track-allocation=user`.
+      Analyze the resulting `*.mem` files with `Coverage.analyze_malloc`.
+    - Round 1 (URL2, enzone2022.kml): tracked allocations dropped from
+      240 MiB → 123 MiB (-49%). End-to-end benchmark cumulative memory
+      went from 444 MiB → 327 MiB (-27%). Time unchanged. Two fixes:
+        - `xml_parsing.extract_text_content_fast`: fast-path the common
+          0/1-fragment case so we don't allocate a `Vector{String}` and
+          do a `join` for every `<name>`/`<description>`/`<coordinates>`.
+          Single biggest win (108 MiB → 3 MiB on this site).
+        - `Coordinates.parse_coordinates_automa`: enable a heuristic
+          `sizehint!` on the floats vector (~12 MiB win on URL2).
+    - Top remaining hot sites: `Coordinates.jl` FSM `:number` action
+      (~50 MiB on URL2 — the `push!(results_vector, …)` per parsed
+      float, mostly the floats payload itself), `Coordinates.jl` final
+      `Vector{SVector{3,Float64}}` allocation (~23 MiB, mostly
+      irreducible storage), `tables.jl` / `Layers.jl` immediate-child
+      traversal closures (~10 MiB each — likely XML.jl LazyNode boxing
+      inside the `@for_each_immediate_child` body).
 - [ ] Evaluate skipping the double materialization
       (`KMLFile` tree → `PlacemarkTable` → `DataFrame`) by going
       `LazyKMLFile` → `DataFrame` directly when DataFrames is the

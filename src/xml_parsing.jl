@@ -25,16 +25,34 @@ All collected text values are then joined together. If no text content is found
 among the immediate children, or if all text values are `nothing`, an empty string is returned.
 """
 function extract_text_content_fast(node::XML.AbstractXMLNode)
-    texts = String[]
+    # Fast path: most KML elements have either no Text/CData child or a
+    # single one (e.g. <name>FOO</name>, <description><![CDATA[…]]></description>).
+    # For that common case we avoid allocating a `Vector{String}` and the
+    # eager `join` that would otherwise copy the text. We only allocate the
+    # extras vector when a 2nd fragment shows up.
+    found::Union{Nothing,String} = nothing
+    extras::Union{Nothing,Vector{String}} = nothing
     @for_each_immediate_child node child begin
         if XML.nodetype(child) === XML.Text || XML.nodetype(child) === XML.CData
             text_value = XML.value(child)
             if text_value !== nothing
-                push!(texts, text_value)
+                if found === nothing
+                    found = text_value
+                elseif extras === nothing
+                    extras = String[found, text_value]
+                else
+                    push!(extras, text_value)
+                end
             end
         end
     end
-    return isempty(texts) ? "" : join(texts)
+    if extras !== nothing
+        return join(extras)
+    elseif found !== nothing
+        return found
+    else
+        return ""
+    end
 end
 
 # ─── Parse KMLFile from XML document ─────────────────────────────────────────
