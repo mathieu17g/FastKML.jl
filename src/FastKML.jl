@@ -60,32 +60,9 @@ end
 
 # ─── Make KMLFile Iterable and Indexable ────────────────────────────────────
 
-"""
-    iterate(kml::KMLFile)
-
-Iterate over the children of a KMLFile.
-
-# Example
-```julia
-for child in kml
-    println(typeof(child), ": ", child.name)
-end
-```
-"""
 Base.iterate(k::KMLFile, state...) = iterate(k.children, state...)
 Base.length(k::KMLFile) = length(k.children)
 Base.eltype(::Type{KMLFile}) = Union{XML.AbstractXMLNode, KMLElement}
-
-"""
-    kml[i]
-
-Access children of a KMLFile by index.
-
-# Example
-```julia
-doc = kml[1]  # Get first child (usually Document)
-```
-"""
 Base.getindex(k::KMLFile, i) = k.children[i]
 Base.firstindex(k::KMLFile) = 1
 Base.lastindex(k::KMLFile) = length(k.children)
