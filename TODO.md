@@ -11,10 +11,17 @@ Open items accumulated during development. Add to it; tick off as you go.
       and reduces each ring to a single point. Not a FastKML bug.
       Documented in `docs/src/coordinate_parsing.md` and tested in
       `test/runtests.jl`.
-- [ ] **URL3 (`Aglim1.kmz`) — pending.** Same upstream domain (ESDAC,
-      KMLer-generated) and same WIP note as URL1, so very likely the
-      same root cause. Verify once and either remove from the diverging
-      list or document as a known shared case.
+- [x] **URL3 (`Aglim1.kmz`) — resolved.** Same root cause as URL1: ESDAC /
+      KMLer-generated, comma-only-delimited coordinates with no
+      whitespace between tuples. Verified directly on the raw XML
+      (first `<coordinates>` starts with the same byte sequence as
+      USEDO.kmz, suggesting ESDAC re-uses the same geometry across
+      products). Side observation: rows where the source has a nested
+      `<MultiGeometry>` containing only `<Polygon>` children round-trip
+      as `MULTIPOLYGON Z (...)` via FastKML and as `GEOMETRYCOLLECTION
+      Z (POLYGON Z (...))` via ArchGDAL — both are valid OGC Simple
+      Features WKT representations of the same data, but downstream
+      consumers that branch on geometry type will see them as distinct.
 - [ ] **URL6 (`national_frs.kmz`) — pending.** Diverges on **row count**
       rather than per-row geometry; the WIP note even suggests ArchGDAL
       itself struggles on this file. Different category from URL1/URL3
