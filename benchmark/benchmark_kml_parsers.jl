@@ -19,26 +19,61 @@ using Printf
 using Profile
 
 # ───────────────────────────── URLs ─────────────────────────────────────── #
-#! WIP: This first file does not stem the same geometry than with ArchGDAL.jl
+# Each URL carries a one-line marker recording its current status against
+# ArchGDAL after the benchmark's symmetric normalizations (whitespace,
+# named-HTML-entity decoding, ArchGDAL multi-layer concatenation):
+#
+#   #* iso     — DataFrames match end-to-end.
+#   #! non-iso — diverges in a known way that is *not* a FastKML bug
+#                (non-conformant source, parser-policy difference, or
+#                pending feature).
+#   #? not yet investigated.
+
+#! Non-conformant source: KMLer-generated, comma-only coordinate
+#  delimiters with no inter-tuple whitespace (`lon1,lat1,0,lon2,lat2,0,…`).
+#  FastKML's lenient parser recovers the geometry correctly; ArchGDAL's
+#  strict-spec parser reduces each ring to a single point. Documented in
+#  docs/src/coordinate_parsing.md as a known KML interoperability issue.
 URL1 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/USEDO.kmz"
-#* This second file leads to the same DataFrame as ArchGDAL.jl and the parsing is faster
+#* Matches end-to-end on all four compared columns (5 411 rows).
+#  FastKML ~1.25× faster than ArchGDAL on this file.
 URL2 = "https://www.dec.ny.gov/data/der/enzones/enzone2022.kmz"
-#! WIP: This third file does not stem the same geometry than with ArchGDAL.jl
+#! Same upstream domain and root cause as URL1 (ESDAC / KMLer,
+#  comma-only delimiters; first <coordinates> is byte-identical to USEDO).
 URL3 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/Aglim1.kmz"
-#* This fourth file leads to the same DataFrame as ArchGDAL.jl and the parsing a bit slower
+#* Matches end-to-end (28 557 rows). FastKML is ~14% *slower* than
+#  ArchGDAL on this file (a large flat layer of point Placemarks);
+#  suspected hot path on wide-and-shallow files in xml_parsing.jl —
+#  investigation tracked in TODO.md.
 URL4 = "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS-2_bound_world_0.kml"
+#* Matches end-to-end (14 260 rows). FastKML ~1.99× faster than
+#  ArchGDAL on this file (the largest FastKML win in the iso set so far).
 URL5 = "https://earthquake.usgs.gov/static/lfs/nshm/qfaults/qfaults.kmz"
-#! WIP: This sixth file does not stem the same number of rows than with ArchGDAL.jl. ArchGDAL.jl seems to have difficulties on this parsing
+#! Matches after the benchmark methodology updates of `f0aab78` /
+#  `23222d6` (ArchGDAL multi-layer concat, name strip + entity decode),
+#  except for a single residual row whose source has a malformed
+#  `<coordinates>,,0</coordinates>` — FastKML returns `Float64[]`,
+#  ArchGDAL substitutes `(0,0,0)`. Accepted as a legitimate
+#  fallback-policy difference. FastKML ~1.83× faster than ArchGDAL
+#  (apples-to-apples, with all ArchGDAL leaf-folder layers concatenated).
 URL6 = "https://ordsext.epa.gov/FLA/www3/national_frs.kmz"
-# ???
+#? Not yet investigated.
 URL7 = "https://www.neonscience.org/sites/default/files/NEON_Field_Sites_KMZ_v20_May2025.kmz"
-#! WIP: Does not work with FastKML.jl because of NetworkLink elements not handled yet
+#! FastKML does not yet resolve `<NetworkLink>` elements, which this
+#  file relies on; pending feature work.
 URL8 = "https://infoterre.brgm.fr/sites/default/files/upload/kml/kml_geo_1000.kml"
-#! WIP: Geometry appears to be line strings via Google Earth, but FastKML.jl extracts points
+#! Geometry interpretation diverges from Google Earth (which renders
+#  line strings); FastKML currently extracts points. Root cause not yet
+#  investigated.
 URL9 = "https://pubs.usgs.gov/of/2007/1264/SteepestDescents_Kilauea1983_10m_cell7500.KMZ"
 
 
+# Files where the DataFrames match (after normalizations) — the canonical
+# happy-path benchmark set. URL6 is left out because of its single
+# residual accepted divergence; add it explicitly if needed.
 ISO_GDAL_URLS = [URL2, URL4, URL5]
+# Files where FastKML and ArchGDAL diverge for documented reasons. Useful
+# for investigating parser-policy differences, not for declaring success.
 ANISO_GDAL_URLS = [URL1, URL3, URL6]
 URLS_TO_BENCHMARK = ISO_GDAL_URLS
 URL_TO_BENCHMARK = URL1
