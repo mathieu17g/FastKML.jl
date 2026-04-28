@@ -27,9 +27,9 @@ Open items accumulated during development. Add to it; tick off as you go.
       itself struggles on this file. Different category from URL1/URL3
       and worth a fresh look.
 - [ ] After URL3/URL6, sweep across the improved diagnostics
-      (`diff @ char N`, WKT `.val`) on any other anisotropic file we
-      come across and decide row-by-row which interpretation is correct
-      against the raw XML.
+      (`diff @ char N`, WKT `.val`) on any other diverging (non-iso)
+      file we come across and decide row-by-row which interpretation is
+      correct against the raw XML.
 - [ ] Investigate URL4 (`WRS-2_bound_world_0.kml`, 28k flat Placemarks):
       FastKML is ~14% slower than ArchGDAL there, while it is 25–99%
       faster on URL2 and URL5. Likely a hot path in `xml_parsing.jl` for
