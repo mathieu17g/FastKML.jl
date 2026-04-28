@@ -75,7 +75,10 @@ end
 
 function _lazy_top_level_features(file::LazyKMLFile)
     kml_elem = _find_kml_element(file.root_node)
-    features = []
+    # Concrete element type — without it, every `push!(features, child)`
+    # boxes the LazyNode in `Any`, which adds up across deeply-nested
+    # KML files (~9 MiB per call on a 5k-Placemark file).
+    features = XML.LazyNode[]
 
     @for_each_immediate_child kml_elem child begin
         if XML.nodetype(child) === XML.Element
