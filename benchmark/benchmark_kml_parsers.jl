@@ -41,7 +41,7 @@ URL9 = "https://pubs.usgs.gov/of/2007/1264/SteepestDescents_Kilauea1983_10m_cell
 ISO_GDAL_URLS = [URL2, URL4, URL5]
 ANISO_GDAL_URLS = [URL1, URL3, URL6]
 URLS_TO_BENCHMARK = ISO_GDAL_URLS
-URL_TO_BENCHMARK = URL7
+URL_TO_BENCHMARK = URL1
 
 # ────────────────────────── fetch KML/KMZ ──────────────────────────────────── #
 
@@ -145,6 +145,43 @@ function table_with_archgdal(path; i::Integer = 0)
     end
 end
 
+# ──────────────────────── diff display helpers ───────────────────────────── #
+
+"""
+    _first_diff_char_pos(a, b) -> Int
+
+1-based character position of the first difference between strings `a` and `b`.
+Returns `min(length(a), length(b)) + 1` if one is a prefix of the other, or `0`
+if the two are equal.
+"""
+function _first_diff_char_pos(a::AbstractString, b::AbstractString)
+    a == b && return 0
+    i = 0
+    for (ca, cb) in zip(a, b)
+        i += 1
+        ca != cb && return i
+    end
+    return min(length(a), length(b)) + 1
+end
+
+"""
+    _diff_window(s, pos; before, after) -> String
+
+Substring of `s` centered on character position `pos` (`before` chars left,
+`after` chars right). Adds `...` markers when truncated at either end.
+"""
+function _diff_window(s::AbstractString, pos::Integer; before::Int = 30, after::Int = 80)
+    chars = collect(s)
+    n = length(chars)
+    n == 0 && return ""
+    pos = clamp(pos, 1, n)
+    lo = max(1, pos - before)
+    hi = min(n, pos + after)
+    prefix = lo > 1 ? "..." : ""
+    suffix = hi < n ? "..." : ""
+    return prefix * String(chars[lo:hi]) * suffix
+end
+
 # ────────────────────────────── benchmark ──────────────────────────────────── #
 
 """
@@ -223,11 +260,19 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
                     s_val1 = string(val1) # string() handles missing by converting to "missing"
                     s_val2 = string(val2)
 
-                    # Truncate long strings for display
-                    disp1 = length(s_val1) > truncate_len ? first(s_val1, truncate_len) * "..." : s_val1
-                    disp2 = length(s_val2) > truncate_len ? first(s_val2, truncate_len) * "..." : s_val2
-
-                    println(crayon_msg("  Row $i: FastKML.jl='$(disp1)', ArchGDAL.jl='$(disp2)'"))
+                    pos = _first_diff_char_pos(s_val1, s_val2)
+                    if pos > truncate_len ÷ 2
+                        # Divergence past the simple-prefix window — show a
+                        # context window around the first differing char.
+                        disp1 = _diff_window(s_val1, pos)
+                        disp2 = _diff_window(s_val2, pos)
+                        println(crayon_msg("  Row $i (diff @ char $pos): FastKML.jl='$(disp1)', ArchGDAL.jl='$(disp2)'"))
+                    else
+                        # Divergence near the start — simple truncation suffices.
+                        disp1 = length(s_val1) > truncate_len ? first(s_val1, truncate_len) * "..." : s_val1
+                        disp2 = length(s_val2) > truncate_len ? first(s_val2, truncate_len) * "..." : s_val2
+                        println(crayon_msg("  Row $i: FastKML.jl='$(disp1)', ArchGDAL.jl='$(disp2)'"))
+                    end
                 end
             end
         end
@@ -263,9 +308,12 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
         print_differences("Names", fastkml_geomsnames, gdal_geomsnames, ERROR_MSG_CRAYON)
     end
 
-    # 3. Compare 'description' column
+    # 3. Compare 'description' column.
+    # Both parsers preserve raw `\r\n` from HTML descriptions; normalize
+    # symmetrically (collapse runs of newlines to a single space, then strip)
+    # so we don't flag pure-whitespace divergences as content mismatches.
     fastkml_geomsdescr = strip.(replace.(df_fastkml.description, r"[\r\n]+" => " "))
-    gdal_geomsdescr = df_gdal.Description
+    gdal_geomsdescr    = strip.(replace.(df_gdal.Description,    r"[\r\n]+" => " "))
     if !isequal(fastkml_geomsdescr, gdal_geomsdescr)
         overall_match = false
         println(ERROR_CRAYON("❌ 'description' column differs:"))
@@ -276,8 +324,10 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
     # Assuming 'geometry' column exists in df_fastkml and geometry is the first column in df_gdal.
 
     # 4a. Compare geometry columns (as WKT)
-    fastkml_wktgeoms = WKT.getwkt.(df_fastkml.geometry)
-    gdal_wktgeoms = WKT.getwkt.(df_gdal[:, 1])
+    # Extract `.val` (the bare WKT string) so diff output isn't drowned in
+    # `WellKnownText{...}(...,"…")` wrapper boilerplate.
+    fastkml_wktgeoms = [WKT.getwkt(g).val for g in df_fastkml.geometry]
+    gdal_wktgeoms    = [WKT.getwkt(g).val for g in df_gdal[:, 1]]
     if !isequal(fastkml_wktgeoms, gdal_wktgeoms)
         overall_match = false
         println(ERROR_CRAYON("❌ Geometry column (as WKT) differs:"))
