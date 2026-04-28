@@ -136,12 +136,26 @@ Full `read → convert → DataFrame` with FastKML.jl
 table_with_fastkml(path; i::Integer = 1) = DataFrame(path; layer = i)
 
 """
-Full `read → convert → DataFrame` with ArchGDAL.jl
+Full `read → convert → DataFrame` with ArchGDAL.jl.
+
+If `layer === nothing` (the default), concatenate every layer ArchGDAL
+exposes for the file. ArchGDAL's KML driver maps each leaf `<Folder>`
+to a separate layer, so files with deeply-nested folder hierarchies
+(e.g. EPA's national_frs.kmz, where 19k cities each become their own
+layer) would otherwise silently return only the first folder's
+features. Pass an explicit `layer = i` to inspect a single ArchGDAL
+layer.
 """
-function table_with_archgdal(path; i::Integer = 0)
+function table_with_archgdal(path; layer::Union{Nothing,Integer} = nothing)
     ArchGDAL.read(path) do dataset
-        layer = ArchGDAL.getlayer(dataset, i)
-        return DataFrame(layer)
+        if layer !== nothing
+            return DataFrame(ArchGDAL.getlayer(dataset, layer))
+        end
+        n = ArchGDAL.nlayer(dataset)
+        n == 0 && return DataFrame()
+        n == 1 && return DataFrame(ArchGDAL.getlayer(dataset, 0))
+        dfs = [DataFrame(ArchGDAL.getlayer(dataset, k)) for k in 0:n-1]
+        return vcat(dfs...; cols = :union)
     end
 end
 
@@ -309,11 +323,13 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
     end
 
     # 3. Compare 'description' column.
-    # Both parsers preserve raw `\r\n` from HTML descriptions; normalize
-    # symmetrically (collapse runs of newlines to a single space, then strip)
-    # so we don't flag pure-whitespace divergences as content mismatches.
-    fastkml_geomsdescr = strip.(replace.(df_fastkml.description, r"[\r\n]+" => " "))
-    gdal_geomsdescr    = strip.(replace.(df_gdal.Description,    r"[\r\n]+" => " "))
+    # Both parsers preserve raw whitespace from HTML descriptions; ArchGDAL
+    # additionally collapses tab runs in some files. Normalize symmetrically
+    # by collapsing every run of whitespace (incl. tabs and CRLF) to a
+    # single space, then strip — so we don't flag pure-whitespace
+    # divergences as content mismatches.
+    fastkml_geomsdescr = strip.(replace.(df_fastkml.description, r"\s+" => " "))
+    gdal_geomsdescr    = strip.(replace.(df_gdal.Description,    r"\s+" => " "))
     if !isequal(fastkml_geomsdescr, gdal_geomsdescr)
         overall_match = false
         println(ERROR_CRAYON("❌ 'description' column differs:"))

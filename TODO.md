@@ -22,10 +22,19 @@ Open items accumulated during development. Add to it; tick off as you go.
       Z (POLYGON Z (...))` via ArchGDAL — both are valid OGC Simple
       Features WKT representations of the same data, but downstream
       consumers that branch on geometry type will see them as distinct.
-- [ ] **URL6 (`national_frs.kmz`) — pending.** Diverges on **row count**
-      rather than per-row geometry; the WIP note even suggests ArchGDAL
-      itself struggles on this file. Different category from URL1/URL3
-      and worth a fresh look.
+- [x] **URL6 (`national_frs.kmz`) — resolved.** Two distinct findings:
+      (i) FastKML had a real bug in `decode_named_entities` (sliced on
+      char index instead of byte index, crashing on multi-byte UTF-8
+      next to entities) — fixed in 889a275, with regression tests; (ii)
+      the row count mismatch (FastKML 163k vs ArchGDAL 4) was a
+      **layer-semantics divergence**, not a bug. FastKML exposes 3
+      top-level Document/Folder layers (the first contains all 163k
+      placemarks recursively); ArchGDAL flattens to 19 122 leaf-folder
+      layers (one per city), so `getlayer(dataset, 0)` only sees the
+      first city. Updated `table_with_archgdal` to concatenate ALL
+      ArchGDAL layers by default. Also extended the description
+      normalization to `\s+` (was `[\r\n]+`) so tab-run differences in
+      EPA's HTML descriptions aren't reported as content mismatches.
 - [ ] After URL3/URL6, sweep across the improved diagnostics
       (`diff @ char N`, WKT `.val`) on any other diverging (non-iso)
       file we come across and decide row-by-row which interpretation is
