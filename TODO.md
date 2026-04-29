@@ -93,13 +93,41 @@ Open items accumulated during development. Add to it; tick off as you go.
           not from boxing pushes. Kept the change for correctness, but
           no perf impact. Real fix would need XML.jl-side support for
           a non-allocating iterator.
-    - **Residual hot sites are structural**: `Parsers.Result` per parse
-      (~38 MiB), `Vector{Float64}` payload (~13 MiB), final
-      `Vector{SVector{3,Float64}}` (~23 MiB), `XML.LazyNode` allocation
-      per `XML.next` call across ~1 M nodes (~30 MiB). Further wins
-      require either replacing Parsers.jl with a hand-rolled Float64
-      scanner (custom code), or upstreaming a non-allocating iterator
-      to XML.jl.
+    - **Round 3 (upstream PRs against XML.jl)**: the round-2 review
+      had identified ~30 MiB of `XML.LazyNode` allocations per `next`
+      and ~60 MiB of `Bool[false]` ctx allocations per `next_no_xml_space`
+      as the top remaining sites; both lend themselves to small
+      upstream fixes. Two PR-sized changes prepared in
+      `mathieu17g/XML.jl`:
+        - `perf-share-default-ctx` branch (~6 LOC): when
+          `next_no_xml_space` is reached the document has no
+          `xml:space` attribute, so the per-node ctx is always
+          `Bool[false]` and never mutated — share the parent's instead
+          of allocating a fresh `[false]` per call. Saves ~60 MiB on
+          URL2.
+        - `feature-next-bang` branch (~54 LOC): add `next!` / `prev!`
+          methods that mutate a `LazyNode` in place. Strictly additive,
+          documented aliasing contract. FastKML adoption (on
+          `wip-xml-next-bang-adoption` branch) switches
+          `@for_each_immediate_child` to `next!` and snapshots `child`
+          at the three Layers.jl callsites that retain references.
+          Combined with PR #1, drops URL2 cumulative memory 444 → 193
+          MiB (-57%) and wall-clock 213 → 190 ms (-11%); 234 tests
+          green; iso comparison vs ArchGDAL still ✔.
+        - **Outstanding**: open the two upstream PRs (independent),
+          wait for merge / new XML.jl release, bump the FastKML
+          `[compat]` entry, then merge `wip-xml-next-bang-adoption`
+          into main and remove the temporary `[sources] XML = …`
+          override from `benchmark/Project.toml` and the `dev/` entry
+          from `.gitignore`.
+    - **Residual hot sites after round 3 (still structural)**:
+      `Parsers.Result` per parse (~38 MiB), `Vector{Float64}` payload
+      (~13 MiB), final `Vector{SVector{3,Float64}}` (~23 MiB), the
+      `Raw` struct return inside XML.jl's `next_no_xml_space` (~60 MiB,
+      would need making `Raw` mutable — a more invasive upstream
+      change). Further wins would require replacing Parsers.jl with a
+      hand-rolled Float64 scanner in the Coordinates FSM, or a
+      `Raw`-mutating variant upstream.
 - [ ] Evaluate skipping the double materialization
       (`KMLFile` tree → `PlacemarkTable` → `DataFrame`) by going
       `LazyKMLFile` → `DataFrame` directly when DataFrames is the
