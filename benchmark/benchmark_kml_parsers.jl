@@ -46,8 +46,15 @@ URL3 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/Aglim1.km
 #  suspected hot path on wide-and-shallow files in xml_parsing.jl —
 #  investigation tracked in TODO.md.
 URL4 = "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS-2_bound_world_0.kml"
-#* Matches end-to-end (14 260 rows). FastKML ~1.99× faster than
-#  ArchGDAL on this file (the largest FastKML win in the iso set so far).
+#* Matches end-to-end (114 037 rows across 8 thematic top-level Folders:
+#  Historical, Latest Quaternary, Late Quaternary, Middle/Late Quaternary,
+#  Undifferentiated Quaternary, Unspecified Age, Class B, California
+#  Offshore). With both `table_with_fastkml` and `table_with_archgdal`
+#  concatenating all top-level layers, FastKML pays the cost of iterating
+#  each layer (8 traversals of the lazy XML tree to extract per-layer
+#  placemarks) — so on this file FastKML is currently slightly slower
+#  than ArchGDAL on `main` despite being faster per-feature. See TODO.md
+#  for performance numbers and follow-up ideas.
 URL5 = "https://earthquake.usgs.gov/static/lfs/nshm/qfaults/qfaults.kmz"
 #! Matches after the benchmark methodology updates of `f0aab78` /
 #  `23222d6` (ArchGDAL multi-layer concat, name strip + entity decode),
@@ -166,9 +173,32 @@ end
 # ──────────────────────── parsing pipelines ───────────────────────────────── #
 
 """
-Full `read → convert → DataFrame` with FastKML.jl
+Full `read → convert → DataFrame` with FastKML.jl.
+
+If `layer === nothing` (the default), concatenate every layer FastKML
+exposes for the file. FastKML treats top-level `<Document>` /
+`<Folder>` siblings as layers; some files (e.g. USGS qfaults.kmz)
+expose 8 thematically-distinct top-level Folders rather than a single
+"all features" layer, so picking only `layer = 1` would silently drop
+seven eighths of the dataset. Pass an explicit `layer = i` to inspect
+a single FastKML layer (1-indexed, matching `get_layer_names`).
 """
-table_with_fastkml(path; i::Integer = 1) = DataFrame(path; layer = i)
+function table_with_fastkml(path; layer::Union{Nothing,Integer} = nothing)
+    if layer !== nothing
+        return DataFrame(path; layer = layer)
+    end
+    # Parse the file ONCE into a LazyKMLFile, then iterate layers from
+    # the parsed tree — `DataFrame(path; layer = k)` would otherwise
+    # re-parse the whole document on every call (8× cost on URL5's
+    # 8-layer file). This mirrors ArchGDAL's `dataset → getlayer`
+    # pattern, which similarly shares the parse across layers.
+    file = read(path, FastKML.LazyKMLFile)
+    n = FastKML.get_num_layers(file)
+    n == 0 && return DataFrame()
+    n == 1 && return DataFrame(file; layer = 1)
+    dfs = [DataFrame(file; layer = k) for k in 1:n]
+    return vcat(dfs...; cols = :union)
+end
 
 """
 Full `read → convert → DataFrame` with ArchGDAL.jl.
