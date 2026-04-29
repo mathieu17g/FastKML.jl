@@ -4,3 +4,7 @@
 *.cov
 *.mem
 docs/build/
+# Temporary scratch dir for local clones of upstream packages we are
+# preparing PRs against (e.g. XML.jl via [sources] in benchmark/Project.toml).
+# Wipe once the upstream PR is merged or abandoned.
+dev/
