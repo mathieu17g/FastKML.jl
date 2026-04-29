@@ -41,3 +41,6 @@ ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
 
 [sources]
 FastKML = {path = ".."}
+# Temporary: point at the local checkout while preparing upstream PRs.
+# Remove once the PRs are merged (or abandoned).
+XML = {path = "../dev/XML.jl"}

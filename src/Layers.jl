@@ -90,7 +90,8 @@ function _lazy_top_level_features(file::LazyKMLFile)
         if XML.nodetype(child) === XML.Element
             child_tag = tag(child)
             if _is_feature_tag(child_tag)
-                push!(features, child)
+                # snapshot: macro reuses one LazyNode in place
+                push!(features, XML.LazyNode(child.raw))
             end
         end
     end
@@ -100,11 +101,12 @@ function _lazy_top_level_features(file::LazyKMLFile)
         first_container = @find_immediate_child kml_elem child begin
             XML.nodetype(child) === XML.Element && _is_container_tag(tag(child))
         end
-        
+
         if first_container !== nothing
             @for_each_immediate_child first_container subchild begin
                 if XML.nodetype(subchild) === XML.Element && _is_feature_tag(tag(subchild))
-                    push!(features, subchild)
+                    # snapshot: macro reuses one LazyNode in place
+                    push!(features, XML.LazyNode(subchild.raw))
                 end
             end
         end
@@ -178,7 +180,8 @@ function get_layer_info(file::Union{KMLFile,LazyKMLFile})
                         idx_counter += 1
                         layer_name = _get_name_from_node(child)
                         layer_name = layer_name !== nothing ? layer_name : "<Unnamed Container>"
-                        push!(layer_infos, (idx_counter, layer_name, child))
+                        # snapshot: macro reuses one LazyNode in place
+                        push!(layer_infos, (idx_counter, layer_name, XML.LazyNode(child.raw)))
                     elseif child_tag == "Placemark"
                         has_placemarks = true
                     end
