@@ -161,6 +161,78 @@ end
     @test coords == [SVector(1.0, 2.0), SVector(3.0, 4.0)]
 end
 
+@testset "Layers" begin
+    eg = joinpath(@__DIR__, "example.kml")
+
+    # ── Single-layer file (example.kml: 1 Document, 3 Placemarks, no Folders) ──
+
+    # Path-based API parses internally and returns the same as the typed paths
+    @test get_num_layers(eg) == 1
+    @test length(get_layer_names(eg)) == 1
+    @test get_layer_names(eg)[1] isa String
+
+    eager = read(eg, KMLFile)
+    @test get_num_layers(eager) == 1
+    @test get_layer_names(eager) == get_layer_names(eg)
+
+    lazy = read(eg, LazyKMLFile)
+    @test get_num_layers(lazy) == 1
+    @test get_layer_names(lazy) == get_layer_names(eg)
+
+    # get_layer_info returns Vector{Tuple{Int, String, Any}}
+    info = FastKML.Layers.get_layer_info(lazy)
+    @test length(info) == 1
+    @test info[1][1] == 1                         # idx
+    @test info[1][2] isa AbstractString           # name
+
+    # select_layer by index, by name, and error paths
+    @test FastKML.Layers.select_layer(lazy, 1) !== nothing
+    @test FastKML.Layers.select_layer(lazy, get_layer_names(lazy)[1]) !== nothing
+    @test_throws ErrorException FastKML.Layers.select_layer(lazy, 99)
+    @test_throws ErrorException FastKML.Layers.select_layer(lazy, "no_such_layer")
+
+    # list_layers prints diagnostic info to stdout and returns nothing —
+    # verify it doesn't throw. (We let the println noise hit the test
+    # runner output rather than fight Julia 1.12's `redirect_stdout`
+    # restrictions on `IOBuffer`.)
+    @test list_layers(eg) === nothing
+
+    # ── Multi-layer file (synthetic, 2 Folders inside 1 Document) ──
+
+    multi_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <name>Top Document</name>
+        <Folder>
+          <name>Layer A</name>
+          <Placemark><name>P1</name><Point><coordinates>0,0,0</coordinates></Point></Placemark>
+        </Folder>
+        <Folder>
+          <name>Layer B</name>
+          <Placemark><name>P2</name><Point><coordinates>1,1,0</coordinates></Point></Placemark>
+          <Placemark><name>P3</name><Point><coordinates>2,2,0</coordinates></Point></Placemark>
+        </Folder>
+      </Document>
+    </kml>
+    """
+    multi_eager = parse(KMLFile, multi_kml)
+    multi_lazy  = parse(LazyKMLFile, multi_kml)
+
+    @test get_num_layers(multi_eager) == 2
+    @test get_num_layers(multi_lazy) == 2
+
+    lazy_names = get_layer_names(multi_lazy)
+    @test length(lazy_names) == 2
+    @test "Layer A" in lazy_names
+    @test "Layer B" in lazy_names
+
+    # Select by name and by index
+    @test FastKML.Layers.select_layer(multi_lazy, "Layer A") !== nothing
+    @test FastKML.Layers.select_layer(multi_lazy, "Layer B") !== nothing
+    @test FastKML.Layers.select_layer(multi_lazy, 1) !== nothing
+    @test FastKML.Layers.select_layer(multi_lazy, 2) !== nothing
+end
+
 @testset "HTML entity decoding" begin
     decode = FastKML.HtmlEntities.decode_named_entities
 
