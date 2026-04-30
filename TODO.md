@@ -257,35 +257,78 @@ pipeline without paying the benchmark's wall-clock cost.
 
 ## Code cleanup
 
-- [ ] **Dead-code sweep across the package.** Surfaced when adding the
-      Validation testset: the `outerBoundaryIs === nothing` check in
-      `validate_geometry(::Polygon)` was provably unreachable because
-      `Polygon.outerBoundaryIs` is typed `LinearRing` (no `Nothing` in
-      the union). Removed in that commit. To check for similar cases
-      systematically, three complementary techniques:
+- [partial] **Dead-code sweep — JET.jl run on 2026-04-30.** Origin:
+      adding the Validation testset surfaced that
+      `validate_geometry(::Polygon)`'s `outerBoundaryIs === nothing`
+      check was provably unreachable (the field is typed `LinearRing`,
+      no `Nothing` in the union); removed in that commit. That one
+      hit motivated a wider sweep. Per discussion this session we
+      went straight to JET rather than the type-driven grep first.
 
-    1. **Type-driven (cheap, scriptable)**: for every `field === nothing`
-       (or `field !== nothing`) check across `src/`, look up
-       `fieldtype(T, :field)` and flag any case where `Nothing` is not
-       in the union. The validation.jl sweep this session showed 6/7
-       checks legitimate, 1 dead — same script can run over the other
-       63 nothing-checks in `utils.jl`, `Layers.jl`, `tables.jl`, etc.
+      Procedure to rerun (self-contained temp env, no infra changes):
+      ```sh
+      julia -e '
+        using Pkg
+        Pkg.activate(temp=true)
+        Pkg.develop(path=".")
+        Pkg.add("JET")
+        using FastKML, JET
+        report_package(FastKML)
+      '
+      ```
+      (To keep JET available for repeated runs without re-installing,
+      add `JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"` to
+      `test/Project.toml` `[deps]`; not done now since the next sweep
+      is deferred.)
 
-    2. **Static analysis with [JET.jl](https://github.com/aviatesk/JET.jl)**:
-       JET's `report_package(FastKML)` flags unreachable branches via
-       type-narrowing inference, plus other issues like type
-       instabilities and undefined references. More powerful than the
-       grep approach, catches branches hidden behind multi-step
-       inference. Setup: add JET to `test/Project.toml`, write a
-       `test/jet_test.jl` that asserts no errors above some baseline.
+      Result: 185 raw reports → ~115 union-split MethodError noise
+      discarded (Julia stdlib idioms on tiny Union slices) → 70
+      non-union-split reports → ~12 specific to FastKML.jl (rest in
+      dependencies: XML.jl, Dates, TimeZones, Downloads; out of scope
+      for this package).
 
-    3. **Coverage-driven**: lines that stay 0% after a representative
-       test suite include both untested code AND unreachable code.
-       Cross-reference with (1) and (2) to discriminate. Lower
-       priority since coverage isn't the primary metric.
+      **Fixed (1):**
+      - `src/tables.jl:62` — `Base.eltype(::Type{EagerLazyPlacemarkIterator})
+        = eltype(iter.placemarks)` referenced an undefined `iter`
+        (copy-paste typo from the line-60 instance overload).
+        JET label: `UndefVarError: FastKML.TablesBridge.iter`.
+        Unreachable in practice (Tables.jl materializes via the
+        externally declared `Tables.Schema`, not the iterator's
+        eltype) but any direct `eltype(it)` would crash. Fixed via
+        `fieldtype(EagerLazyPlacemarkIterator, :placemarks)` so the
+        element type stays bound to the struct definition.
 
-      Recommended order: (1) first (a few lines of Julia, exhaustive
-      and quick), (2) when JET configuration warrants the time.
+      **Deferred — to triage in a future session (~11 reports):**
+      - 2× `FieldError` on `.value` access (Array / OrderedDict
+        types) — likely in `field_conversion.jl` or attribute paths.
+      - 6× `iterate(::Nothing)` / `length(::Nothing)` on
+        `src/Layers.jl` paths — probably false positives where JET
+        can't propagate an earlier `nothing`-guard to the iteration
+        site; restructure or `@assert` may suffice.
+      - 2× `convert(Bool, Tuple{})` inside `_iter_feat`
+        (`src/tables.jl:204-214`) — the empty-tuple `else` branch
+        interacting with `&&`/`||` chains under broadcasting.
+      - 1× `BoundsError` on `Tuple{Float64, Float64}[3]` — a 2-tuple
+        indexed at position 3; suspect Coord2/Coord3 confusion in a
+        coordinate-access site.
+
+      None are caught by the existing test suite (54.5% coverage
+      exercises happy paths only). Each is either a guarded branch
+      JET can't see through (false positive — annotate or
+      restructure) or a latent bug like the typo above (real,
+      dormant). Per-report triage cost is non-trivial; bundling for
+      a focused future pass.
+
+      **Other techniques still available** (original three-pronged plan):
+      1. Type-driven grep for `field === nothing` where
+         `fieldtype(T, :field)` excludes `Nothing` — JET subsumes
+         most of this; useful only if a future contributor adds a
+         dependency JET can't analyze.
+      2. ✅ JET.jl — done this session.
+      3. Coverage-driven: lines that stay 0% after the representative
+         test suite are either untested *or* unreachable; cross-ref
+         with (1)/(2) to discriminate. Lower priority now that
+         coverage is at 54.5%.
 
 - [ ] Prune `benchmark/cross_branch_benchmark.jl`: drop the
       `detect_features` cascade, `extract_placemarks_manual`, and the

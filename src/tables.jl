@@ -59,7 +59,7 @@ Base.iterate(iter::EagerLazyPlacemarkIterator, state = 1) =
 
 Base.length(iter::EagerLazyPlacemarkIterator) = length(iter.placemarks)
 Base.IteratorSize(::Type{EagerLazyPlacemarkIterator}) = Base.HasLength()
-Base.eltype(::Type{EagerLazyPlacemarkIterator}) = eltype(iter.placemarks)
+Base.eltype(::Type{EagerLazyPlacemarkIterator}) = eltype(fieldtype(EagerLazyPlacemarkIterator, :placemarks))
 
 #─────────────────────────────────────────────────────────────────────────────────────#
 
