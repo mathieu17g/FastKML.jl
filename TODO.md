@@ -249,11 +249,23 @@ Still to do (low ROI / deferred):
       exercising more attribute conversions, but it's a long tail of
       small branches.
 
-Shortcut still to consider: extract the assertions from the benchmark's
-correctness checks (name / description / WKT / coordinates equality vs
-ArchGDAL on `ISO_GDAL_URLS`) into integration tests, gated behind a
-network or `ENV` flag, so CI gets functional coverage of the parsing
-pipeline without paying the benchmark's wall-clock cost.
+Done — extracted from the benchmark:
+- [x] **ArchGDAL parity integration tests.** The four correctness
+      checks from `benchmark/benchmark_kml_parsers.jl` (row count, name
+      after strip + entity decode, description after `\s+→` collapse,
+      geometry WKT, geometry coordinates) are now `@test` assertions
+      in `test/integration_archgdal_test.jl`, gated behind
+      `FASTKML_INTEGRATION=true`. Run via:
+      ```sh
+      FASTKML_INTEGRATION=true julia --project=. -e 'using Pkg; Pkg.test()'
+      ```
+      Pulls URL2 (enzone2022.kmz, 5 411 rows), URL4
+      (WRS-2_bound_world_0.kml, 28 557 rows), and URL5
+      (qfaults.kmz, 114 037 rows) into a Scratch cache
+      (`FastKMLIntegrationCache`) — three URLs that match end-to-end
+      against ArchGDAL after the symmetric normalizations. Adds
+      `ArchGDAL`, `WellKnownGeometry`, `URIs`, `Scratch`, `Downloads`
+      to `test/Project.toml` (resolved during `Pkg.test()` only).
 
 ## Code cleanup
 

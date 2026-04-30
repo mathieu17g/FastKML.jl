@@ -702,3 +702,11 @@ end
     @test decode("≤&amp;≥") == "≤&≥"
     @test decode("a b") == "a b"  # multi-byte char with no entities
 end
+
+# ── Network-gated integration tests vs ArchGDAL ─────────────────────────────
+# Set `FASTKML_INTEGRATION=true` to run. Pulls KML/KMZ files from the web,
+# parses with both libraries, and asserts the resulting DataFrames agree.
+# Adds `ArchGDAL`, `WellKnownGeometry`, `URIs`, and `Scratch` as test deps.
+if get(ENV, "FASTKML_INTEGRATION", "false") == "true"
+    include("integration_archgdal_test.jl")
+end
