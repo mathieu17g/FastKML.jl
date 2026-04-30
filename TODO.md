@@ -181,22 +181,48 @@ Open items accumulated during development. Add to it; tick off as you go.
 
 ## Test coverage
 
-Current global coverage: ~22%. Modules currently at 0%:
+Current global coverage: **41.76%** (was 22.49% before this session).
+Three target modules are now covered above 60%; remaining 0% modules
+are listed below.
 
-- [ ] `src/Layers.jl` — `list_layers`, `get_layer_names`, `select_layer`,
-      multi-layer detection.
-- [ ] `src/tables.jl` — `PlacemarkTable`, Tables.jl interface.
-- [ ] `src/time_parsing.jl` — needs a fixture KML containing `TimeStamp`
-      and `TimeSpan`.
-- [ ] `src/utils.jl`, `src/validation.jl`, `src/html_entities.jl`.
-- [ ] `ext/FastKMLDataFramesExt.jl` — add `DataFrames` to the test env
-      and a `DataFrame(read(file, KMLFile))` smoke test.
-- [ ] `ext/FastKMLZipArchivesExt.jl` — add a small `.kmz` fixture and a
-      KMZ roundtrip test.
-- [ ] `ext/FastKMLMakieExt.jl` — at minimum a smoke test (optional given
-      the size of the Makie dep tree in CI).
+Done in this session:
+- [x] `src/Layers.jl` — `get_num_layers`, `get_layer_names`,
+      `get_layer_info`, `select_layer` (by index, by name, error
+      branches), `list_layers` smoke test, both eager + lazy paths,
+      single-layer (example.kml) + multi-layer (synthetic) fixtures.
+      Covered: 0% → 63.8%.
+- [x] `src/tables.jl` — `PlacemarkTable` construction from each input
+      type, `Tables.istable / rowaccess / schema / rows`, all four
+      `parse_geometry_lazy` branches (Point / LineString / Polygon /
+      MultiGeometry), `simplify_single_parts` toggle. Covered: 0% →
+      79.6%.
+- [x] `src/utils.jl` — 10 exported helpers: `find_placemarks` (filters),
+      `count_features`, `get_bounds` (Point / Polygon / LineString /
+      container), `extract_path`, `extract_styles`, `get_metadata`,
+      `haversine_distance` (NYC↔LA known distance), `path_length`,
+      `unwrap_single_part_multigeometry` (all branches),
+      `merge_kml_files`. Covered: 1.9% → 80.6%.
 
-Shortcut to consider: extract the assertions from the benchmark's
+Still to do (in ROI order):
+- [ ] `ext/FastKMLDataFramesExt.jl` (8 LOC) — add `DataFrames` to the
+      test env, write a single `DataFrame(read(file, KMLFile))` smoke
+      test. Highest ROI by far given the LOC.
+- [ ] `ext/FastKMLZipArchivesExt.jl` (40 LOC) — add a small `.kmz`
+      fixture (zip example.kml in `test/`) and a KMZ roundtrip test.
+- [ ] `src/time_parsing.jl` (153 LOC) — needs a fixture KML containing
+      `TimeStamp` and `TimeSpan`. Larger setup but parser code is
+      isolated.
+- [ ] `src/validation.jl` (123 LOC) — needs synthetic invalid KMLs to
+      exercise the validation paths.
+- [ ] `src/html_entities.jl` — already at 39.3% from the
+      `decode_named_entities` testset; remaining 60% is the
+      `_load_entities` cache-build path that runs once per session
+      (not exercised in tests because cache is already populated).
+      Probably best left alone unless we want to test cache rebuild.
+- [ ] `ext/FastKMLMakieExt.jl` (61 LOC) — heavy Makie dep; defer or
+      keep optional in CI.
+
+Shortcut still to consider: extract the assertions from the benchmark's
 correctness checks (name / description / WKT / coordinates equality vs
 ArchGDAL on `ISO_GDAL_URLS`) into integration tests, gated behind a
 network or `ENV` flag, so CI gets functional coverage of the parsing
