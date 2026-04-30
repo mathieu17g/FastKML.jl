@@ -114,12 +114,16 @@ Open items accumulated during development. Add to it; tick off as you go.
           Combined with PR #1, drops URL2 cumulative memory 444 → 193
           MiB (-57%) and wall-clock 213 → 190 ms (-11%); 234 tests
           green; iso comparison vs ArchGDAL still ✔.
-        - **Outstanding**: open the two upstream PRs (independent),
-          wait for merge / new XML.jl release, bump the FastKML
-          `[compat]` entry, then merge `wip-xml-next-bang-adoption`
-          into main and remove the temporary `[sources] XML = …`
-          override from `benchmark/Project.toml` and the `dev/` entry
-          from `.gitignore`.
+        - **Submitted**: PR
+          [JuliaComputing/XML.jl#58](https://github.com/JuliaComputing/XML.jl/pull/58)
+          (ctx share) and [#59](https://github.com/JuliaComputing/XML.jl/pull/59)
+          (next!/prev!) — awaiting review. KML.jl#14 has been closed with
+          a pointer back to FastKML.jl as the home for this work. Once
+          #58/#59 land in a XML.jl release, bump the FastKML `[compat]`
+          entry, merge `wip-xml-next-bang-adoption` into main, and
+          remove the temporary `[sources] XML = …` override from
+          `benchmark/Project.toml` and the `dev/` entry from
+          `.gitignore`.
     - **Residual hot sites after round 3 (still structural)**:
       `Parsers.Result` per parse (~38 MiB), `Vector{Float64}` payload
       (~13 MiB), final `Vector{SVector{3,Float64}}` (~23 MiB), the
