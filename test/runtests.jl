@@ -162,6 +162,105 @@ end
     @test coords == [SVector(1.0, 2.0), SVector(3.0, 4.0)]
 end
 
+@testset "Utils" begin
+    eg = joinpath(@__DIR__, "example.kml")
+    file = read(eg, KMLFile)
+
+    # ── find_placemarks ──
+    pms = FastKML.Utils.find_placemarks(file)
+    @test length(pms) == 3
+    @test all(p isa FastKML.Placemark for p in pms)
+    @test length(FastKML.Utils.find_placemarks(file; name_pattern = r"Central")) == 1
+    @test length(FastKML.Utils.find_placemarks(file; name_pattern = "Tunnel")) == 1
+    @test length(FastKML.Utils.find_placemarks(file; has_geometry = true)) == 3
+    @test length(FastKML.Utils.find_placemarks(file; has_geometry = false)) == 0
+
+    # ── count_features ──
+    counts = FastKML.Utils.count_features(file)
+    @test counts[:Placemark] == 3
+    @test counts[:Folder] == 0
+
+    pt_pm   = first(p for p in pms if p.name == "Time Square")
+    poly_pm = first(p for p in pms if p.name == "Central Park")
+    line_pm = first(p for p in pms if p.name == "Lincoln Tunnel")
+
+    # ── get_bounds: Point / Polygon / LineString / container ──
+    pt_b = FastKML.Utils.get_bounds(pt_pm.Geometry)
+    @test pt_b isa NTuple{4, Float64}
+    @test pt_b[1] == pt_b[3]                       # min_lon == max_lon for a point
+    @test pt_b[2] == pt_b[4]
+
+    poly_b = FastKML.Utils.get_bounds(poly_pm.Geometry)
+    @test poly_b[1] < poly_b[3]                    # spans range in lon
+    @test poly_b[2] < poly_b[4]                    # spans range in lat
+
+    line_b = FastKML.Utils.get_bounds(line_pm.Geometry)
+    @test line_b isa NTuple{4, Float64}
+
+    file_b = FastKML.Utils.get_bounds(file)
+    @test file_b isa NTuple{4, Float64}
+
+    # ── extract_path ──
+    path = FastKML.Utils.extract_path(line_pm.Geometry)
+    @test path isa Vector{Tuple{Float64, Float64}}
+    @test length(path) == 4                        # Lincoln Tunnel: 4 coords
+
+    # Empty LineString
+    @test FastKML.Utils.extract_path(FastKML.LineString(coordinates = nothing)) == Tuple{Float64, Float64}[]
+
+    # ── extract_styles ──
+    styles = FastKML.Utils.extract_styles(file)
+    @test length(styles) == 3                      # example.kml has 3 Style entries
+
+    # ── get_metadata ──
+    meta = FastKML.Utils.get_metadata(pt_pm)
+    @test meta isa Dict{Symbol, Any}
+    @test meta[:name] == "Time Square"
+    @test meta[:geometry_type] == "Point"
+
+    # ── haversine_distance: NYC ↔ LA ≈ 3935 km ──
+    nyc = SVector(-74.006, 40.7128, 0.0)
+    la  = SVector(-118.243, 34.0522, 0.0)
+    @test 3.93e6 < FastKML.Utils.haversine_distance(nyc, la) < 3.95e6
+    @test FastKML.Utils.haversine_distance(nyc, nyc) ≈ 0.0 atol = 1e-9
+
+    # ── path_length ──
+    @test FastKML.Utils.path_length(line_pm.Geometry) > 0.0
+    @test FastKML.Utils.path_length(FastKML.LineString(coordinates = nothing)) == 0.0
+
+    # ── unwrap_single_part_multigeometry ──
+    @test FastKML.unwrap_single_part_multigeometry(nothing) === nothing
+    @test FastKML.unwrap_single_part_multigeometry(missing) === missing
+    @test FastKML.unwrap_single_part_multigeometry(pt_pm.Geometry) === pt_pm.Geometry
+
+    mg_single = FastKML.MultiGeometry(Geometries = [pt_pm.Geometry])
+    @test FastKML.unwrap_single_part_multigeometry(mg_single) === pt_pm.Geometry
+
+    mg_multi = FastKML.MultiGeometry(Geometries = [pt_pm.Geometry, line_pm.Geometry])
+    @test FastKML.unwrap_single_part_multigeometry(mg_multi) === mg_multi
+
+    # ── merge_kml_files: two single-Placemark files combine to one with 2 ──
+    file_a = parse(KMLFile, """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <name>Doc A</name>
+        <Placemark><name>From A</name><Point><coordinates>0,0,0</coordinates></Point></Placemark>
+      </Document>
+    </kml>
+    """)
+    file_b = parse(KMLFile, """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <name>Doc B</name>
+        <Placemark><name>From B</name><Point><coordinates>1,1,0</coordinates></Point></Placemark>
+      </Document>
+    </kml>
+    """)
+    merged = FastKML.Utils.merge_kml_files(file_a, file_b; name = "Merged")
+    @test merged isa KMLFile
+    @test FastKML.Utils.count_features(merged)[:Placemark] == 2
+end
+
 @testset "Layers" begin
     eg = joinpath(@__DIR__, "example.kml")
 
