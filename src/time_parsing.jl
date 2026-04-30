@@ -299,29 +299,27 @@ function parse_datetime_without_timezone(s::AbstractString, format::Symbol)
 end
 
 function parse_week_date(s::AbstractString, format::Symbol)
+    # Note: the local for the parsed weekday is named `wday` (not `dayofweek`)
+    # to avoid shadowing `Dates.dayofweek`, which is called below — the
+    # shadow turned the function call into an Int "call" and broke parsing.
     if format == :week_extended
-        # Manual extraction for performance
         year = parse(Int, @view s[1:4])
         week = parse(Int, @view s[7:8])
-        dayofweek = parse(Int, @view s[10:10])
+        wday = parse(Int, @view s[10:10])
     else  # basic format
         year = parse(Int, @view s[1:4])
         week = parse(Int, @view s[6:7])
-        dayofweek = parse(Int, @view s[8:8])
+        wday = parse(Int, @view s[8:8])
     end
-    
-    # Calculate the date
-    # First day of year
+
+    # First day of year, then find the Monday of ISO week 1
     jan1 = Date(year, 1, 1)
-    # Find the Monday of week 1
     dow_jan1 = dayofweek(jan1)
     days_to_monday = dow_jan1 == 1 ? 0 : 8 - dow_jan1
     week1_monday = jan1 + Day(days_to_monday)
-    
-    # Calculate the target date
-    target_date = week1_monday + Week(week - 1) + Day(dayofweek - 1)
-    
-    return target_date
+
+    # Target date
+    return week1_monday + Week(week - 1) + Day(wday - 1)
 end
 
 function parse_ordinal_date(s::AbstractString, format::Symbol)

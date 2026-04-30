@@ -1,8 +1,10 @@
 using FastKML
 using DataFrames
+using Dates
 using GeoInterface
 using Tables
 using Test
+using TimeZones
 using XML
 using StaticArrays  # Add this import
 using ZipArchives
@@ -438,6 +440,67 @@ end
     simplified  = collect(Tables.rows(PlacemarkTable(smg; simplify_single_parts = true)))
     @test no_simplify[1].geometry isa FastKML.MultiGeometry
     @test simplified[1].geometry  isa FastKML.Point
+end
+
+@testset "ISO 8601 time parsing" begin
+    parse_iso = FastKML.TimeParsing.parse_iso8601
+
+    # ── Date forms ──
+    @test parse_iso("2024-04-29") == Date(2024, 4, 29)        # extended
+    @test parse_iso("20240429")   == Date(2024, 4, 29)        # basic
+
+    # ── DateTime without TZ ──
+    @test parse_iso("2024-04-29T15:30:00") == DateTime(2024, 4, 29, 15, 30, 0)
+    @test parse_iso("20240429T153000")     == DateTime(2024, 4, 29, 15, 30, 0)
+
+    # ── DateTime with TZ → ZonedDateTime ──
+    @test parse_iso("2024-04-29T15:30:00Z")      isa ZonedDateTime
+    @test parse_iso("2024-04-29T15:30:00+01:00") isa ZonedDateTime
+    @test parse_iso("20240429T153000Z")          isa ZonedDateTime
+
+    # ── Week date / Ordinal date ──
+    @test parse_iso("2024-W17-1") isa Date
+    @test parse_iso("2024-119")   isa Date
+
+    # ── Invalid strings round-trip as the original String, with a warning ──
+    @test (@test_logs (:warn,) parse_iso("ab")) isa String
+    @test (@test_logs (:warn,) parse_iso("not a date at all")) isa String
+
+    # ── warn=false suppresses warnings ──
+    @test parse_iso("definitely not iso"; warn = false) == "definitely not iso"
+
+    # ── is_valid_iso8601 ──
+    @test FastKML.TimeParsing.is_valid_iso8601("2024-04-29")
+    @test !FastKML.TimeParsing.is_valid_iso8601("not iso")
+
+    # ── Integration: a synthetic KML with <TimeStamp> exercises the
+    #    field_conversion → time_parsing call chain on the eager path ──
+    timed_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <Placemark>
+          <name>Stamped</name>
+          <TimeStamp><when>2024-04-29T12:00:00Z</when></TimeStamp>
+          <Point><coordinates>0,0,0</coordinates></Point>
+        </Placemark>
+        <Placemark>
+          <name>Spanned</name>
+          <TimeSpan>
+            <begin>2024-01-01</begin>
+            <end>2024-12-31</end>
+          </TimeSpan>
+          <Point><coordinates>1,1,0</coordinates></Point>
+        </Placemark>
+      </Document>
+    </kml>
+    """
+    file = parse(KMLFile, timed_kml)
+    pms = FastKML.Utils.find_placemarks(file)
+    @test length(pms) == 2
+    # The TimePrimitive field should be populated and carry the parsed
+    # `when` / `begin` / `end` (not the original strings).
+    @test pms[1].TimePrimitive !== nothing
+    @test pms[2].TimePrimitive !== nothing
 end
 
 @testset "ZipArchives extension (KMZ)" begin
