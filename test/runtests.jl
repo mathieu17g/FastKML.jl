@@ -1,9 +1,11 @@
 using FastKML
+using DataFrames
 using GeoInterface
 using Tables
 using Test
 using XML
 using StaticArrays  # Add this import
+using ZipArchives
 
 
 
@@ -436,6 +438,72 @@ end
     simplified  = collect(Tables.rows(PlacemarkTable(smg; simplify_single_parts = true)))
     @test no_simplify[1].geometry isa FastKML.MultiGeometry
     @test simplified[1].geometry  isa FastKML.Point
+end
+
+@testset "ZipArchives extension (KMZ)" begin
+    eg = joinpath(@__DIR__, "example.kml")
+    eg_bytes = read(eg)
+
+    mktempdir() do dir
+        # Standard case: doc.kml at the root of the archive — first
+        # branch of `_find_kml_entry_in_kmz`'s prioritization.
+        kmz_path = joinpath(dir, "test.kmz")
+        ZipWriter(kmz_path) do zw
+            zip_newfile(zw, "doc.kml")
+            write(zw, eg_bytes)
+        end
+
+        # Eager KMZ → KMLFile (drives `_read_file_from_path(::KMZ_…)`)
+        kml_eager = read(kmz_path, KMLFile)
+        @test kml_eager isa KMLFile
+        @test FastKML.Utils.count_features(kml_eager)[:Placemark] == 3
+
+        # Lazy KMZ → LazyKMLFile (drives `_read_lazy_file_from_path(::KMZ_…)`)
+        kml_lazy = read(kmz_path, LazyKMLFile)
+        @test kml_lazy isa LazyKMLFile
+
+        # End-to-end: DataFrame on a .kmz path goes through the lazy
+        # branch of the extension and Tables.rows(PlacemarkTable).
+        df = DataFrame(kmz_path)
+        @test nrow(df) == 3
+        @test names(df) == ["name", "description", "geometry"]
+    end
+
+    # Fallback case: KML entry under a subdirectory rather than at root.
+    # Exercises a different branch of `_find_kml_entry_in_kmz`.
+    mktempdir() do dir
+        kmz_path = joinpath(dir, "nested.kmz")
+        ZipWriter(kmz_path) do zw
+            zip_newfile(zw, "data/inner.kml")
+            write(zw, eg_bytes)
+        end
+        @test read(kmz_path, KMLFile) isa KMLFile
+    end
+end
+
+@testset "DataFrames extension" begin
+    eg = joinpath(@__DIR__, "example.kml")
+
+    # Path with default lazy=true → goes through the LazyKMLFile branch
+    df_lazy_default = DataFrame(eg)
+    @test df_lazy_default isa DataFrame
+    @test names(df_lazy_default) == ["name", "description", "geometry"]
+    @test nrow(df_lazy_default) == 3
+
+    # Path with lazy=false → exercises the eager KMLFile branch
+    df_eager_path = DataFrame(eg; lazy = false)
+    @test df_eager_path isa DataFrame
+    @test nrow(df_eager_path) == 3
+
+    # KMLFile / LazyKMLFile object overload (skips the path branch entirely)
+    file_eager = read(eg, KMLFile)
+    file_lazy  = read(eg, LazyKMLFile)
+    @test DataFrame(file_eager) isa DataFrame
+    @test DataFrame(file_lazy)  isa DataFrame
+
+    # `layer` and `simplify_single_parts` keywords flow through to PlacemarkTable
+    @test nrow(DataFrame(eg; layer = 1)) == 3
+    @test DataFrame(eg; simplify_single_parts = true) isa DataFrame
 end
 
 @testset "HTML entity decoding" begin
