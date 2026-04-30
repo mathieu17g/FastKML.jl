@@ -56,6 +56,12 @@ function _is_feature_tag(tag_name::String)
     ("Document", "Folder", "Placemark", "NetworkLink", "GroundOverlay", "PhotoOverlay", "ScreenOverlay", "gx:Tour")
 end
 
+# Non-Element children (comments, text nodes, processing instructions) report
+# `tag(child) === nothing`. Treat them as never matching either tag set so
+# callers don't need to filter by `XML.nodetype` at every call site.
+_is_layer_tag(::Nothing) = false
+_is_container_tag(::Nothing) = false
+
 function _is_container_tag(tag_name::String)
     tag_name in ("Document", "Folder")
 end

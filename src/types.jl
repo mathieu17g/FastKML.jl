@@ -348,13 +348,13 @@ Base.@kwdef mutable struct ResourceMap <: NoAttributes
 end
 
 Base.@kwdef mutable struct SimpleField <: KMLElement{(:type, :name)}
-    type::String
-    name::String
+    type::String = ""
+    name::String = ""
     @option displayName::String
 end
 
 Base.@kwdef mutable struct Schema <: KMLElement{(:id,)}
-    id::String
+    id::String = ""
     @option SimpleFields::Vector{SimpleField}
 end
 

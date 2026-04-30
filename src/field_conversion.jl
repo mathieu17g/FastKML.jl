@@ -120,7 +120,17 @@ function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::Abst
     if true_field_name === :coordinates || true_field_name === :gx_coord
         try
             converted_value = convert_field_value(value_str, field_type, true_field_name, typeof(parent))
-            setfield!(parent, true_field_name, converted_value)
+            if true_field_name === :gx_coord && getfield(parent, true_field_name) !== nothing
+                # Each <gx:coord> element holds ONE coordinate. Subsequent
+                # <gx:coord> elements accumulate into the same Vector;
+                # without this, repeated elements overwrite each other and
+                # gx_Track only retains the last one. (For <coordinates>,
+                # a single element holds the entire list, so setfield is
+                # the correct operation.)
+                append!(getfield(parent, true_field_name), converted_value)
+            else
+                setfield!(parent, true_field_name, converted_value)
+            end
         catch e
             if e isa FieldConversionError
                 @warn "Failed to convert coordinate field $true_field_name: $(e.message)" value=value_str
@@ -163,35 +173,43 @@ Assign a complex KML object to the appropriate field in the parent.
 """
 function assign_complex_object!(parent::Types.KMLElement, child_object::Types.KMLElement, original_tag::String)
     child_type = typeof(child_object)
-    assigned = false
     parent_type = typeof(parent)
-    
-    # Try to find a compatible field
+
+    # Pass 1: prefer direct type match on any field, regardless of declaration
+    # order. This avoids mis-routing when a later, specific field
+    # (e.g. `ExtendedData::ExtendedData` on `gx_Track`) would otherwise be
+    # eclipsed by an earlier vector field whose `eltype` Julia widens to `Any`.
     for field_name in fieldnames(parent_type)
-        field_type = fieldtype(parent_type, field_name)
         non_nothing_type = Types.typemap(parent_type)[field_name]
-        
-        # Direct type match
         if child_type <: non_nothing_type
             setfield!(parent, field_name, child_object)
-            assigned = true
-            break
-        # Vector field match
-        elseif non_nothing_type <: AbstractVector && child_type <: eltype(non_nothing_type)
-            vec = getfield(parent, field_name)
-            if vec === nothing
-                setfield!(parent, field_name, eltype(non_nothing_type)[])
-                vec = getfield(parent, field_name)
-            end
-            push!(vec, child_object)
-            assigned = true
-            break
+            return
         end
     end
-    
-    if !assigned
-        @warn "Could not assign $(child_type) (from <$original_tag>) to any field in $(parent_type)"
+
+    # Pass 2: vector field match with a concrete `eltype`. Vectors whose
+    # eltype widens to `Any` (e.g. `Union{Vector{Coord2}, Vector{Coord3}}` on
+    # `gx_Track.gx_coord`) are NOT valid destinations for arbitrary
+    # KMLElement children — skip them so a real type mismatch is reported
+    # rather than silently accepted.
+    for field_name in fieldnames(parent_type)
+        non_nothing_type = Types.typemap(parent_type)[field_name]
+        if non_nothing_type <: AbstractVector
+            et = eltype(non_nothing_type)
+            et === Any && continue
+            if child_type <: et
+                vec = getfield(parent, field_name)
+                if vec === nothing
+                    setfield!(parent, field_name, et[])
+                    vec = getfield(parent, field_name)
+                end
+                push!(vec, child_object)
+                return
+            end
+        end
     end
+
+    @warn "Could not assign $(child_type) (from <$original_tag>) to any field in $(parent_type)"
 end
 
 """

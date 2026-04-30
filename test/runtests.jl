@@ -20,11 +20,11 @@ using ZipArchives
 end
 
 @testset "Empty Constructors" begin
-    for T in FastKML.all_concrete_subtypes(FastKML.Object)
+    for T in FastKML.all_concrete_subtypes(FastKML.KMLElement)
         @test T() isa T
     end
     @testset "Empty constructor roundtrips with XML.Node" begin
-        for T in FastKML.all_concrete_subtypes(FastKML.Object)
+        for T in FastKML.all_concrete_subtypes(FastKML.KMLElement)
             o = T()
             n = FastKML.to_xml(o)
             tag = XML.tag(n)
@@ -701,6 +701,47 @@ end
     @test decode("foo &amp;bar") == "foo &bar"
     @test decode("≤&amp;≥") == "≤&≥"
     @test decode("a b") == "a b"  # multi-byte char with no entities
+end
+
+@testset "gx:Track parsing" begin
+    path = joinpath(@__DIR__, "gx_Track_example.kml")
+
+    # ── Eager path (via KMLFile + struct hierarchy) ──
+    file = read(path, KMLFile)
+    @test file isa KMLFile
+    pms = FastKML.Utils.find_placemarks(file)
+    @test length(pms) == 1
+    pm = pms[1]
+    @test pm.name == "2010-05-28T01:16:35.000Z"
+    @test pm.Geometry isa FastKML.gx_Track
+
+    track = pm.Geometry
+    # Each <when> / <gx:coord> in the source contributes one entry. Without
+    # the `assign_field!` accumulation fix, repeated <gx:coord> elements would
+    # overwrite each other and the field would only retain the last one.
+    @test length(track.when) == 7
+    @test length(track.gx_coord) == 7
+    @test track.gx_coord[1]   ≈ SVector(-122.207881, 37.371915, 156.0)
+    @test track.gx_coord[end] ≈ SVector(-122.203207, 37.374857, 140.199997)
+    # ExtendedData must land on `gx_Track.ExtendedData`, NOT be misrouted to
+    # `gx_coord` (regression for the `assign_complex_object!` Union-vector
+    # eltype-widening bug — see field_conversion.jl).
+    @test track.ExtendedData !== nothing
+
+    # ── Lazy path (via LazyKMLFile) ──
+    lazy = read(path, LazyKMLFile)
+    @test lazy isa LazyKMLFile
+    @test get_num_layers(lazy) == 1
+    @test get_layer_names(lazy) == ["Tracks"]
+
+    # `parse_geometry_lazy` (tables.jl) currently only recognises
+    # Point / LineString / Polygon / MultiGeometry tags as geometries, so
+    # gx:Track returns `missing` on the lazy DataFrame path. The eager path
+    # above is the way to access gx_Track data programmatically.
+    df = DataFrame(path)
+    @test nrow(df) == 1
+    @test df.name[1] == "2010-05-28T01:16:35.000Z"
+    @test ismissing(df.geometry[1])
 end
 
 # ── Network-gated integration tests vs ArchGDAL ─────────────────────────────
