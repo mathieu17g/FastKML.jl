@@ -129,13 +129,21 @@ Open items accumulated during development. Add to it; tick off as you go.
         - **Submitted**: PR
           [JuliaComputing/XML.jl#58](https://github.com/JuliaComputing/XML.jl/pull/58)
           (ctx share) and [#59](https://github.com/JuliaComputing/XML.jl/pull/59)
-          (next!/prev!) — awaiting review. KML.jl#14 has been closed with
-          a pointer back to FastKML.jl as the home for this work. Once
-          #58/#59 land in a XML.jl release, bump the FastKML `[compat]`
-          entry, merge `wip-xml-next-bang-adoption` into main, and
-          remove the temporary `[sources] XML = …` override from
-          `benchmark/Project.toml` and the `dev/` entry from
-          `.gitignore`.
+          (next!/prev!). KML.jl#14 has been closed with a pointer back
+          to FastKML.jl as the home for this work.
+        - **Status update 2026-04-30**: joshday reviewed #59 and
+          pointed at
+          [`XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54),
+          a major renovation in flight that may overlap with or
+          supersede the perf concerns these PRs address. **#58 and
+          #59 are on hold pending #54.** In the meantime keep using
+          the patched XML.jl in `dev/XML.jl/` and the FastKML
+          adaptation on `wip-xml-next-bang-adoption` as the active
+          local working baseline (benchmarks and ongoing dev run
+          against the patched stack). The `[sources] XML = …`
+          override in `benchmark/Project.toml` and the `dev/` entry
+          in `.gitignore` stay in place. Once #54 lands, re-evaluate
+          the path forward against the new upstream API.
     - **Residual hot sites after round 3 (still structural)**:
       `Parsers.Result` per parse (~38 MiB), `Vector{Float64}` payload
       (~13 MiB), final `Vector{SVector{3,Float64}}` (~23 MiB), the
@@ -342,14 +350,16 @@ Done — extracted from the benchmark:
          with (1)/(2) to discriminate. Lower priority now that
          coverage is at 54.5%.
 
-- [ ] Prune `benchmark/cross_branch_benchmark.jl`: drop the
-      `detect_features` cascade, `extract_placemarks_manual`, and the
-      branch-vs-branch framing. With a single FastKML repo these features
-      always exist; the script can just be a "scaling benchmark" on
-      synthetic Point-only KMLs.
-- [ ] Decide: keep or delete `benchmark/run_benchmarks.bat`. Windows-only
-      and hardcodes `..\dev\KML` + the `parsing_perf_enhancement` branch
-      — obsolete in the new repo.
-- [ ] Add `benchmark/benchmark_results_*.json` to `.gitignore`. The
-      `Manifest.toml` for the benchmark env is already covered by the
-      existing `*Manifest.toml` pattern.
+- [x] Pruned `benchmark/cross_branch_benchmark.jl` and renamed to
+      `scaling_benchmark.jl`: dropped `detect_features`,
+      `extract_placemarks_manual`, the branch-vs-branch framing, the
+      DataFrames/Tables/JSON `try ... catch` cascade, and the JSON
+      results dump. Now ~110 lines (was 407): synthetic Point-only KML
+      generator + read benchmark + DataFrame benchmark + console
+      summary table.
+- [x] Deleted `benchmark/run_benchmarks.bat` (Windows-only,
+      hardcoded `..\dev\KML` + `parsing_perf_enhancement` branch —
+      no longer makes sense without the cross-branch flow).
+- [x] `benchmark/benchmark_results_*.json` gitignore item is moot —
+      the JSON dump was removed from the script in the prune above,
+      so no such files are generated anymore.
