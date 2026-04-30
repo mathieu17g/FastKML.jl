@@ -181,9 +181,9 @@ Open items accumulated during development. Add to it; tick off as you go.
 
 ## Test coverage
 
-Current global coverage: **41.76%** (was 22.49% before this session).
-Three target modules are now covered above 60%; remaining 0% modules
-are listed below.
+Current global coverage: **54.53%** (was 22.49% at session start —
++32.04 points). Six target modules went from 0% (or near-zero) to
+74-100%, plus two real bugs were caught and fixed along the way.
 
 Done in this session:
 - [x] `src/Layers.jl` — `get_num_layers`, `get_layer_names`,
@@ -202,25 +202,52 @@ Done in this session:
       `haversine_distance` (NYC↔LA known distance), `path_length`,
       `unwrap_single_part_multigeometry` (all branches),
       `merge_kml_files`. Covered: 1.9% → 80.6%.
+- [x] `ext/FastKMLDataFramesExt.jl` — both method overloads
+      (`DataFrame(path; lazy)` with `lazy=true` and `lazy=false`,
+      `DataFrame(KMLFile)`, `DataFrame(LazyKMLFile)`), `layer` and
+      `simplify_single_parts` keyword forwarding. Covered: 0% → 100%.
+- [x] `ext/FastKMLZipArchivesExt.jl` — KMZ round-trip with `doc.kml`
+      at root (standard) and `data/inner.kml` (fallback branch),
+      both eager (KMLFile) and lazy (LazyKMLFile) reads, end-to-end
+      DataFrame on a `.kmz` path. Covered: 0% → 77.5%.
+- [x] `src/time_parsing.jl` — `parse_iso8601` across date /
+      datetime / datetime-with-TZ / week date / ordinal date forms
+      (extended + basic), invalid-string fallback (with and without
+      `warn=false`), `is_valid_iso8601`, plus an integration KML with
+      `<TimeStamp>` and `<TimeSpan>`. Covered: 0% → 74.3%. **Caught
+      a real bug**: `parse_week_date` shadowed `Dates.dayofweek` with
+      a local variable, breaking every week-date input; fixed in the
+      same commit by renaming the local to `wday`.
+- [x] `src/validation.jl` — `validate_coordinates` (scalar + vector),
+      `validate_geometry` for each geometry type (Point, LineString,
+      LinearRing-with-unclosed-branch, Polygon, MultiGeometry),
+      `validate_document_structure` for Document and Folder
+      (including empty-features and nested-Document branches).
+      Covered: 0% → 74.8%. **Caught a curry-direction trap**:
+      `occursin(needle)` is `Base.Fix2(occursin, needle)`, the
+      *opposite* of what one would intuit; `contains(needle)` is
+      the right choice for `any(.., issues)` patterns. Documented
+      inline.
 
-Still to do (in ROI order):
-- [ ] `ext/FastKMLDataFramesExt.jl` (8 LOC) — add `DataFrames` to the
-      test env, write a single `DataFrame(read(file, KMLFile))` smoke
-      test. Highest ROI by far given the LOC.
-- [ ] `ext/FastKMLZipArchivesExt.jl` (40 LOC) — add a small `.kmz`
-      fixture (zip example.kml in `test/`) and a KMZ roundtrip test.
-- [ ] `src/time_parsing.jl` (153 LOC) — needs a fixture KML containing
-      `TimeStamp` and `TimeSpan`. Larger setup but parser code is
-      isolated.
-- [ ] `src/validation.jl` (123 LOC) — needs synthetic invalid KMLs to
-      exercise the validation paths.
-- [ ] `src/html_entities.jl` — already at 39.3% from the
-      `decode_named_entities` testset; remaining 60% is the
-      `_load_entities` cache-build path that runs once per session
-      (not exercised in tests because cache is already populated).
-      Probably best left alone unless we want to test cache rebuild.
-- [ ] `ext/FastKMLMakieExt.jl` (61 LOC) — heavy Makie dep; defer or
-      keep optional in CI.
+Still to do (low ROI / deferred):
+- [ ] `src/html_entities.jl` — currently 39.3% (the
+      `decode_named_entities` body is fully covered). The remaining
+      60% is the `_load_entities` cache-build path which runs once
+      per session and isn't exercised because the cache is populated.
+      Best left alone unless we want to add a test that wipes the
+      Scratch cache and forces a network rebuild.
+- [ ] `ext/FastKMLMakieExt.jl` (61 LOC) — heavy Makie dep tree
+      (~60+ transitive packages). Skip in CI; if needed, add a
+      minimal `Plots`/`Makie`-free smoke test that just verifies
+      method dispatch resolves once Makie is loaded.
+- [ ] `src/FastKML.jl` (45 LOC, currently 37.8%) and
+      `src/navigation.jl` (127 LOC, 1.6%) — leftover paths in the
+      module entry-point and the navigation helpers; lower priority
+      since they're internal plumbing.
+- [ ] `src/field_conversion.jl` (188 LOC, 43.1%) — already partially
+      covered transitively. Could be pushed higher with KML fixtures
+      exercising more attribute conversions, but it's a long tail of
+      small branches.
 
 Shortcut still to consider: extract the assertions from the benchmark's
 correctness checks (name / description / WKT / coordinates equality vs
