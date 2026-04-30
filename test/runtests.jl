@@ -493,13 +493,11 @@ end
     @test occursin("not closed", msg_uc)
 
     # ── validate_geometry(::Polygon) ──
+    # Outer-boundary presence is enforced at the type level
+    # (`Polygon.outerBoundaryIs::LinearRing`, no `Nothing` in the union),
+    # so validation only needs to walk the rings themselves. Test a
+    # well-formed polygon, plus one with a malformed inner boundary.
     @test V.validate_geometry(FastKML.Polygon(outerBoundaryIs = valid_ring))[1]
-    # Note: the "Polygon has no outer boundary" branch in validation.jl is
-    # unreachable through the public constructor — `outerBoundaryIs` is
-    # typed `LinearRing` (not `Union{Nothing, LinearRing}`) and
-    # `setfield!(p, :outerBoundaryIs, nothing)` errors at the type
-    # boundary. Skipping that test rather than introducing a low-level
-    # workaround that would lock us into a brittle internal layout.
     bad_poly = FastKML.Polygon(outerBoundaryIs = valid_ring, innerBoundaryIs = [unclosed])
     ok_bp, msg_bp = V.validate_geometry(bad_poly)
     @test !ok_bp

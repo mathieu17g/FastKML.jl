@@ -86,11 +86,10 @@ function validate_geometry(geom::LinearRing)
 end
 
 function validate_geometry(geom::Polygon)
-    # Validate outer boundary
-    if geom.outerBoundaryIs === nothing
-        return false, "Polygon has no outer boundary"
-    end
-    
+    # Note: `Polygon.outerBoundaryIs` is typed as `LinearRing` (not
+    # `Union{Nothing, LinearRing}`), so the type system enforces the
+    # presence of an outer boundary at construction time. No runtime
+    # `nothing`-check needed here.
     is_valid, msg = validate_geometry(geom.outerBoundaryIs)
     if !is_valid
         return false, "Outer boundary: $msg"

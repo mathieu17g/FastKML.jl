@@ -257,6 +257,36 @@ pipeline without paying the benchmark's wall-clock cost.
 
 ## Code cleanup
 
+- [ ] **Dead-code sweep across the package.** Surfaced when adding the
+      Validation testset: the `outerBoundaryIs === nothing` check in
+      `validate_geometry(::Polygon)` was provably unreachable because
+      `Polygon.outerBoundaryIs` is typed `LinearRing` (no `Nothing` in
+      the union). Removed in that commit. To check for similar cases
+      systematically, three complementary techniques:
+
+    1. **Type-driven (cheap, scriptable)**: for every `field === nothing`
+       (or `field !== nothing`) check across `src/`, look up
+       `fieldtype(T, :field)` and flag any case where `Nothing` is not
+       in the union. The validation.jl sweep this session showed 6/7
+       checks legitimate, 1 dead — same script can run over the other
+       63 nothing-checks in `utils.jl`, `Layers.jl`, `tables.jl`, etc.
+
+    2. **Static analysis with [JET.jl](https://github.com/aviatesk/JET.jl)**:
+       JET's `report_package(FastKML)` flags unreachable branches via
+       type-narrowing inference, plus other issues like type
+       instabilities and undefined references. More powerful than the
+       grep approach, catches branches hidden behind multi-step
+       inference. Setup: add JET to `test/Project.toml`, write a
+       `test/jet_test.jl` that asserts no errors above some baseline.
+
+    3. **Coverage-driven**: lines that stay 0% after a representative
+       test suite include both untested code AND unreachable code.
+       Cross-reference with (1) and (2) to discriminate. Lower
+       priority since coverage isn't the primary metric.
+
+      Recommended order: (1) first (a few lines of Julia, exhaustive
+      and quick), (2) when JET configuration warrants the time.
+
 - [ ] Prune `benchmark/cross_branch_benchmark.jl`: drop the
       `detect_features` cascade, `extract_placemarks_manual`, and the
       branch-vs-branch framing. With a single FastKML repo these features
