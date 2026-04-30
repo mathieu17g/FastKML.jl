@@ -442,6 +442,117 @@ end
     @test simplified[1].geometry  isa FastKML.Point
 end
 
+@testset "Validation" begin
+    V = FastKML.Validation
+
+    # ── validate_coordinates(::Coord{2,3}) ──
+    @test V.validate_coordinates(SVector(0.0, 0.0))         == (true, "")
+    @test V.validate_coordinates(SVector(0.0, 0.0, 100.0))  == (true, "")
+
+    ok_lon, msg_lon = V.validate_coordinates(SVector(200.0, 0.0))
+    @test !ok_lon
+    @test occursin("Longitude", msg_lon)
+
+    ok_lat, msg_lat = V.validate_coordinates(SVector(0.0, 100.0))
+    @test !ok_lat
+    @test occursin("Latitude", msg_lat)
+
+    # extreme altitude warns but the result is still (true, "")
+    extreme = (@test_logs (:warn, r"Altitude") V.validate_coordinates(SVector(0.0, 0.0, 100_000.0)))
+    @test extreme == (true, "")
+
+    # ── validate_coordinates(::Vector) ──
+    @test V.validate_coordinates([SVector(0.0, 0.0), SVector(1.0, 1.0)]) == (true, "")
+    ok_vec, msg_vec = V.validate_coordinates([SVector(0.0, 0.0), SVector(200.0, 0.0)])
+    @test !ok_vec
+    @test occursin("Coordinate 2", msg_vec)
+
+    # ── validate_geometry(::Point) ──
+    @test V.validate_geometry(FastKML.Point(coordinates = SVector(0.0, 0.0)))[1]
+    @test !V.validate_geometry(FastKML.Point(coordinates = nothing))[1]
+
+    # ── validate_geometry(::LineString) ──
+    valid_ls = FastKML.LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0)])
+    @test V.validate_geometry(valid_ls)[1]
+    @test !V.validate_geometry(FastKML.LineString(coordinates = nothing))[1]
+    @test !V.validate_geometry(FastKML.LineString(coordinates = [SVector(0.0, 0.0)]))[1]
+
+    # ── validate_geometry(::LinearRing) ──
+    valid_ring = FastKML.LinearRing(coordinates = [
+        SVector(0.0, 0.0), SVector(1.0, 0.0), SVector(1.0, 1.0), SVector(0.0, 0.0),
+    ])
+    @test V.validate_geometry(valid_ring)[1]
+    @test !V.validate_geometry(FastKML.LinearRing(coordinates = nothing))[1]
+    @test !V.validate_geometry(FastKML.LinearRing(coordinates = [SVector(0.0, 0.0)]))[1]
+
+    unclosed = FastKML.LinearRing(coordinates = [
+        SVector(0.0, 0.0), SVector(1.0, 0.0), SVector(1.0, 1.0), SVector(0.5, 0.5),
+    ])
+    ok_uc, msg_uc = V.validate_geometry(unclosed)
+    @test !ok_uc
+    @test occursin("not closed", msg_uc)
+
+    # ── validate_geometry(::Polygon) ──
+    @test V.validate_geometry(FastKML.Polygon(outerBoundaryIs = valid_ring))[1]
+    # Note: the "Polygon has no outer boundary" branch in validation.jl is
+    # unreachable through the public constructor — `outerBoundaryIs` is
+    # typed `LinearRing` (not `Union{Nothing, LinearRing}`) and
+    # `setfield!(p, :outerBoundaryIs, nothing)` errors at the type
+    # boundary. Skipping that test rather than introducing a low-level
+    # workaround that would lock us into a brittle internal layout.
+    bad_poly = FastKML.Polygon(outerBoundaryIs = valid_ring, innerBoundaryIs = [unclosed])
+    ok_bp, msg_bp = V.validate_geometry(bad_poly)
+    @test !ok_bp
+    @test occursin("Inner boundary", msg_bp)
+
+    # ── validate_geometry(::MultiGeometry) ──
+    @test V.validate_geometry(
+        FastKML.MultiGeometry(Geometries = [FastKML.Point(coordinates = SVector(0.0, 0.0))]),
+    )[1]
+    @test !V.validate_geometry(FastKML.MultiGeometry(Geometries = nothing))[1]
+    @test !V.validate_geometry(FastKML.MultiGeometry(Geometries = FastKML.Geometry[]))[1]
+
+    # ── validate_document_structure(::Document) ──
+    valid_doc = FastKML.Document(Features = [
+        FastKML.Placemark(name = "P", Geometry = FastKML.Point(coordinates = SVector(0.0, 0.0))),
+    ])
+    ok_doc, issues_doc = V.validate_document_structure(valid_doc)
+    @test ok_doc
+    @test isempty(issues_doc)
+
+    bad_doc = FastKML.Document(Features = [
+        FastKML.Placemark(name = "Bad", Geometry = FastKML.Point(coordinates = nothing)),
+    ])
+    ok_bd, issues_bd = V.validate_document_structure(bad_doc)
+    @test !ok_bd
+    @test !isempty(issues_bd)
+
+    empty_doc = FastKML.Document(Features = nothing)
+    ok_ed, issues_ed = V.validate_document_structure(empty_doc)
+    @test !ok_ed
+    # Note: `contains(needle)` is the curry that matches `s -> contains(s, needle)`
+    # — what we want here. `occursin(needle)` is `Base.Fix2(occursin, needle)`,
+    # i.e. `s -> occursin(s, needle)`, which checks whether the issue string is
+    # a substring of `needle`, not the other way around. Using `contains` keeps
+    # the assertions readable.
+    @test any(contains("no features"), issues_ed)
+
+    # Nested Document warning
+    nested_doc = FastKML.Document(Features = [FastKML.Document(Features = nothing)])
+    ok_nd, issues_nd = V.validate_document_structure(nested_doc)
+    @test !ok_nd
+    @test any(contains("Nested Document"), issues_nd)
+
+    # ── validate_document_structure(::Folder) ──
+    valid_folder = FastKML.Folder(Features = [
+        FastKML.Placemark(name = "P", Geometry = FastKML.Point(coordinates = SVector(0.0, 0.0))),
+    ])
+    @test V.validate_document_structure(valid_folder)[1]
+
+    empty_folder = FastKML.Folder(Features = nothing)
+    @test !V.validate_document_structure(empty_folder)[1]
+end
+
 @testset "ISO 8601 time parsing" begin
     parse_iso = FastKML.TimeParsing.parse_iso8601
 
