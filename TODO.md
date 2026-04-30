@@ -49,10 +49,22 @@ Open items accumulated during development. Add to it; tick off as you go.
       (`diff @ char N`, WKT `.val`) on any other diverging (non-iso)
       file we come across and decide row-by-row which interpretation is
       correct against the raw XML.
-- [ ] Investigate URL4 (`WRS-2_bound_world_0.kml`, 28k flat Placemarks):
-      FastKML is ~14% slower than ArchGDAL there, while it is 25–99%
-      faster on URL2 and URL5. Likely a hot path in `xml_parsing.jl` for
-      very wide-and-shallow files.
+- [x] **URL4 (`WRS-2_bound_world_0.kml`) — resolved on
+      `wip-xml-next-bang-adoption + dev-combined`.** With both XML.jl
+      fixes (#58, #59) adopted, FastKML is now ~1.18× *faster* than
+      ArchGDAL on this file (256 ms vs 301 ms; previously 14% slower
+      on `main`). The slowdown was driven by per-call XML allocations
+      that the upstream PRs eliminate. Profile-wise, the dominant
+      remaining cost is **structural** (~4.8 M `next_no_xml_space`
+      calls / ~12× the logical token count per Placemark) because
+      FastKML walks each Placemark's subtree multiple times — once in
+      `_collect_placemarks_optimized!`, once in
+      `extract_placemark_fields_lazy`, plus extra inside
+      `parse_geometry_lazy` and `extract_text_content_fast`. A
+      single-pass refactor (one tree walk dispatching by tag/depth)
+      would roughly halve traversal cost on wide-and-shallow files;
+      see the deferred-perf list below — the original concern
+      ("FastKML slower on URL4") is resolved so we don't need it now.
 
 ## Performance
 
@@ -152,6 +164,20 @@ Open items accumulated during development. Add to it; tick off as you go.
       and assigns each Placemark to its containing layer in a single
       pass, or expose an iterator that yields `(layer_idx, placemark)`
       pairs the consumer can group however it wants.
+- [ ] Single-pass per-Placemark extraction. Surfaced by the URL4
+      profile (Apr 2026): each Placemark's subtree is currently walked
+      ~12× the logical token count, because
+      `_collect_placemarks_optimized!`,
+      `extract_placemark_fields_lazy`, `parse_geometry_lazy`, and
+      `extract_text_content_fast` each re-tokenize the same XML
+      bytes. On URL4 this explains 387 MiB of `Raw` allocations in
+      `next_no_xml_space` (~4.8 M calls for 28 k Placemarks). A
+      refactor where one outer walk dispatches by tag/depth and
+      threads field extraction inline would roughly halve traversal
+      cost on wide-and-shallow files. Not urgent now that FastKML
+      already beats ArchGDAL on URL4 (1.18× faster after the upstream
+      XML.jl fixes), but worth doing if perf becomes a competitive
+      pressure later.
 
 ## Test coverage
 
