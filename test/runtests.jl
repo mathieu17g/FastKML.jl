@@ -1,5 +1,6 @@
 using FastKML
 using GeoInterface
+using Tables
 using Test
 using XML
 using StaticArrays  # Add this import
@@ -231,6 +232,111 @@ end
     @test FastKML.Layers.select_layer(multi_lazy, "Layer B") !== nothing
     @test FastKML.Layers.select_layer(multi_lazy, 1) !== nothing
     @test FastKML.Layers.select_layer(multi_lazy, 2) !== nothing
+end
+
+@testset "PlacemarkTable / Tables.jl interface" begin
+    eg = joinpath(@__DIR__, "example.kml")
+
+    # ── Construction from each input type ──
+    t_path  = PlacemarkTable(eg)
+    t_eager = PlacemarkTable(read(eg, KMLFile))
+    t_lazy  = PlacemarkTable(read(eg, LazyKMLFile))
+
+    # Tables.jl interface trait methods
+    @test Tables.istable(typeof(t_path))
+    @test Tables.istable(KMLFile)
+    @test Tables.istable(LazyKMLFile)
+    @test Tables.rowaccess(typeof(t_path))
+
+    # Schema is name / description / geometry
+    sch = Tables.schema(t_path)
+    @test sch.names == (:name, :description, :geometry)
+    @test sch.types[1] === String
+    @test sch.types[2] === String
+
+    # ── Row contents on example.kml: 3 Placemarks (Point / Polygon / LineString) ──
+    rows_lazy = collect(Tables.rows(t_path))
+    @test length(rows_lazy) == 3
+    @test Set(r.name for r in rows_lazy) ==
+          Set(["Time Square", "Central Park", "Lincoln Tunnel"])
+    geom_types = Set(typeof(r.geometry) for r in rows_lazy)
+    @test FastKML.Point     in geom_types
+    @test FastKML.LineString in geom_types
+    @test FastKML.Polygon    in geom_types
+
+    # Eager path returns the same names (different geometry objects but same logical data)
+    rows_eager = collect(Tables.rows(t_eager))
+    @test length(rows_eager) == 3
+    @test Set(r.name for r in rows_eager) == Set(r.name for r in rows_lazy)
+
+    # ── Multi-layer file with `layer = ` selection ──
+    multi_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <name>Multi</name>
+        <Folder>
+          <name>Layer A</name>
+          <Placemark><name>P1</name><Point><coordinates>0,0,0</coordinates></Point></Placemark>
+        </Folder>
+        <Folder>
+          <name>Layer B</name>
+          <Placemark><name>P2</name><Point><coordinates>1,1,0</coordinates></Point></Placemark>
+          <Placemark><name>P3</name><Point><coordinates>2,2,0</coordinates></Point></Placemark>
+        </Folder>
+      </Document>
+    </kml>
+    """
+    multi_lazy = parse(LazyKMLFile, multi_kml)
+
+    rows_a = collect(Tables.rows(PlacemarkTable(multi_lazy; layer = 1)))
+    @test length(rows_a) == 1
+    @test rows_a[1].name == "P1"
+
+    rows_b = collect(Tables.rows(PlacemarkTable(multi_lazy; layer = 2)))
+    @test length(rows_b) == 2
+    @test Set(r.name for r in rows_b) == Set(["P2", "P3"])
+
+    # Layer selection by name (exercises Layers.select_layer's String branch)
+    rows_by_name = collect(Tables.rows(PlacemarkTable(multi_lazy; layer = "Layer A")))
+    @test length(rows_by_name) == 1
+    @test rows_by_name[1].name == "P1"
+
+    # ── MultiGeometry path coverage in parse_geometry_lazy ──
+    multi_geom_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <Placemark>
+          <name>MG</name>
+          <MultiGeometry>
+            <Point><coordinates>0,0,0</coordinates></Point>
+            <Point><coordinates>1,1,0</coordinates></Point>
+          </MultiGeometry>
+        </Placemark>
+      </Document>
+    </kml>
+    """
+    mg_rows = collect(Tables.rows(PlacemarkTable(parse(LazyKMLFile, multi_geom_kml))))
+    @test length(mg_rows) == 1
+    @test mg_rows[1].geometry isa FastKML.MultiGeometry
+
+    # ── simplify_single_parts: single-child MultiGeometry should unwrap to inner geometry ──
+    single_mg_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <Placemark>
+          <name>SingleMG</name>
+          <MultiGeometry>
+            <Point><coordinates>5,5,0</coordinates></Point>
+          </MultiGeometry>
+        </Placemark>
+      </Document>
+    </kml>
+    """
+    smg = parse(LazyKMLFile, single_mg_kml)
+    no_simplify = collect(Tables.rows(PlacemarkTable(smg)))
+    simplified  = collect(Tables.rows(PlacemarkTable(smg; simplify_single_parts = true)))
+    @test no_simplify[1].geometry isa FastKML.MultiGeometry
+    @test simplified[1].geometry  isa FastKML.Point
 end
 
 @testset "HTML entity decoding" begin
