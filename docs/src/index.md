@@ -68,4 +68,7 @@ FastKML.write("dc.kml", file)
 - [Coordinate parsing](coordinate_parsing.md) — how FastKML handles
   spec-conformant **and** non-conformant coordinate strings, with examples
   drawn from real-world KML files.
+- [Eager vs lazy parsing](eager_vs_lazy.md) — what each parsing mode
+  preserves vs skips, with `ExtendedData` (including the gx:Track
+  per-coord arrays) as the headline example.
 - [API reference](api.md) — the public API exported by `FastKML`.

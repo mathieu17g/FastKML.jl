@@ -5,15 +5,18 @@ export PlacemarkTable
 import Tables
 import ..Layers: get_layer_info, select_layer
 import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, Geometry,
-                LinearRing, Point, LineString, Polygon, MultiGeometry, Coord2, Coord3
+                LinearRing, Point, LineString, Polygon, MultiGeometry, Coord2, Coord3,
+                gx_Track
 import ..XMLParsing: object, extract_text_content_fast
 import ..Macros: @find_immediate_child, @for_each_immediate_child
 import ..HtmlEntities: decode_named_entities
 import ..Coordinates: parse_coordinates_automa
+import ..TimeParsing: parse_iso8601
 import ..Utils: unwrap_single_part_multigeometry
 import XML: XML, parse, Node, LazyNode, tag, children, attributes
 using StaticArrays
 using Base.Iterators: flatten
+using TimeZones, Dates
 
 # Use the parent module's types to ensure consistent display
 const KML = parentmodule(@__MODULE__)
@@ -131,7 +134,7 @@ function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
     elseif geom_tag == "MultiGeometry"
         geometries = Geometry[]
         @for_each_immediate_child geom_node child begin
-            if XML.nodetype(child) === XML.Element && tag(child) in ("Point", "LineString", "Polygon", "MultiGeometry")
+            if XML.nodetype(child) === XML.Element && tag(child) in ("Point", "LineString", "Polygon", "MultiGeometry", "gx:Track")
                 geom = parse_geometry_lazy(child)
                 if !ismissing(geom)
                     push!(geometries, geom)
@@ -139,6 +142,38 @@ function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
             end
         end
         return MultiGeometry(; Geometries = isempty(geometries) ? nothing : geometries)
+
+    elseif geom_tag == "gx:Track"
+        # Lazy gx:Track extraction: walk the Track's children once and harvest
+        # <when> and <gx:coord> into the `gx_Track` struct. ExtendedData,
+        # Model, Icon, gx_angles are intentionally NOT collected on this fast
+        # path — users who need them should read the file as a `KMLFile`
+        # (eager). 2D <gx:coord> entries are promoted to 3D with alt = 0 so
+        # the field stays homogeneous as `Vector{Coord3}`.
+        when_vals = Union{TimeZones.ZonedDateTime, Dates.Date, String}[]
+        coord_vals = Coord3[]
+
+        @for_each_immediate_child geom_node child begin
+            XML.nodetype(child) === XML.Element || continue
+            child_tag = tag(child)
+            if child_tag == "when"
+                txt = extract_text_content_fast(child)
+                push!(when_vals, parse_iso8601(txt; warn = false))
+            elseif child_tag == "gx:coord"
+                txt = extract_text_content_fast(child)
+                coords = parse_coordinates_automa(txt)
+                if !isempty(coords)
+                    c = coords[1]
+                    push!(coord_vals, length(c) == 3 ? Coord3(c) : Coord3(c[1], c[2], 0.0))
+                end
+            end
+        end
+
+        isempty(when_vals) && isempty(coord_vals) && return missing
+        return gx_Track(
+            when     = isempty(when_vals)  ? nothing : when_vals,
+            gx_coord = isempty(coord_vals) ? nothing : coord_vals,
+        )
     end
 
     return missing
@@ -183,7 +218,7 @@ function extract_placemark_fields_lazy(placemark_node::XML.AbstractXMLNode)
         elseif child_tag == "description" && !has_description
             description = extract_text_content_fast(child)
             has_description = true
-        elseif child_tag in ("Point", "LineString", "Polygon", "MultiGeometry") && !has_geometry
+        elseif child_tag in ("Point", "LineString", "Polygon", "MultiGeometry", "gx:Track") && !has_geometry
             geometry = parse_geometry_lazy(child)
             has_geometry = true
         end

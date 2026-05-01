@@ -11,7 +11,8 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
        Link, Icon, Orientation, Location, Scale, Lod, LatLonBox, LatLonAltBox,
        Region, gx_LatLonQuad, hotSpot, overlayXY, screenXY, rotationXY, size,
        ItemIcon, ViewVolume, ImagePyramid, Snippet, Data, SimpleData, SchemaData,
-       ExtendedData, Alias, ResourceMap, SimpleField, Schema, AtomAuthor, AtomLink,
+       gx_SimpleArrayData, ExtendedData, Alias, ResourceMap, SimpleField,
+       gx_SimpleArrayField, Schema, AtomAuthor, AtomLink,
        # Style types
        LineStyle, PolyStyle, IconStyle, LabelStyle, ListStyle, BalloonStyle,
        Style, StyleMapPair, StyleMap,
@@ -329,9 +330,20 @@ Base.@kwdef mutable struct SimpleData <: KMLElement{(:name,)}
     content::String = ""
 end
 
+# Google KML extension: per-Track auxiliary data array, one <gx:value> per
+# Track point (heart rate, cadence, power, …). Schema-typed via the matching
+# `gx_SimpleArrayField` declared in the parent `Schema`. Values are kept as
+# strings — caller converts to `Int`/`Float64`/etc. based on the field's
+# declared `type`.
+Base.@kwdef mutable struct gx_SimpleArrayData <: KMLElement{(:name,)}
+    name::String = ""
+    @option gx_value::Vector{String}
+end
+
 Base.@kwdef mutable struct SchemaData <: KMLElement{(:schemaUrl,)}
     @option schemaUrl::String
     @option SimpleDataVec ::Vector{SimpleData}
+    @option gx_SimpleArrayDatas::Vector{gx_SimpleArrayData}
 end
 
 Base.@kwdef mutable struct ExtendedData <: NoAttributes
@@ -353,9 +365,21 @@ Base.@kwdef mutable struct SimpleField <: KMLElement{(:type, :name)}
     @option displayName::String
 end
 
+# Google KML extension: schema declaration for per-Track auxiliary data
+# arrays (paired with `gx_SimpleArrayData` instances inside a placemark's
+# ExtendedData). Mirrors `SimpleField` exactly; kept as a separate type so
+# the eager parser can route `<gx:SimpleArrayField>` distinctly from the
+# OGC-spec `<SimpleField>` and so emitters preserve the original tag.
+Base.@kwdef mutable struct gx_SimpleArrayField <: KMLElement{(:type, :name)}
+    type::String = ""
+    name::String = ""
+    @option displayName::String
+end
+
 Base.@kwdef mutable struct Schema <: KMLElement{(:id,)}
     id::String = ""
     @option SimpleFields::Vector{SimpleField}
+    @option gx_SimpleArrayFields::Vector{gx_SimpleArrayField}
 end
 
 Base.@kwdef mutable struct AtomAuthor <: KMLElement{()}
@@ -756,6 +780,7 @@ function _create_tagsym_cache()
         "ItemIcon", "ViewVolume", "ImagePyramid", "Snippet",
         "Data", "SimpleData", "SchemaData", "ExtendedData",
         "Alias", "ResourceMap", "SimpleField", "Schema",
+        "gx_SimpleArrayField", "gx_SimpleArrayData", "gx_value",
         "atom_author", "atom_link",
         # Special mappings from TAG_TO_TYPE
         "overlayXY", "screenXY", "rotationXY", "size", "hotSpot",

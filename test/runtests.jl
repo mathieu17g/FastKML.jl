@@ -728,20 +728,56 @@ end
     # eltype-widening bug — see field_conversion.jl).
     @test track.ExtendedData !== nothing
 
+    # ── Schema with gx:SimpleArrayField declarations ──
+    doc = file[1]
+    @test doc isa FastKML.Document
+    @test doc.Schemas !== nothing && length(doc.Schemas) == 1
+    schema = doc.Schemas[1]
+    @test schema.id == "schema"
+    # OGC <SimpleField>s are absent in this file; only Google's gx variants.
+    @test schema.SimpleFields === nothing
+    @test schema.gx_SimpleArrayFields !== nothing
+    @test length(schema.gx_SimpleArrayFields) == 3
+    @test Set((f.name, f.type, f.displayName) for f in schema.gx_SimpleArrayFields) == Set([
+        ("heartrate", "int",   "Heart Rate"),
+        ("cadence",   "int",   "Cadence"),
+        ("power",     "float", "Power"),
+    ])
+
+    # ── ExtendedData → SchemaData → gx:SimpleArrayData with one <gx:value> per Track point ──
+    @test track.ExtendedData.children !== nothing
+    @test length(track.ExtendedData.children) == 1
+    sd = track.ExtendedData.children[1]
+    @test sd isa FastKML.SchemaData
+    @test sd.schemaUrl == "#schema"
+    @test sd.gx_SimpleArrayDatas !== nothing
+    @test length(sd.gx_SimpleArrayDatas) == 3
+    by_name = Dict(d.name => d.gx_value for d in sd.gx_SimpleArrayDatas)
+    @test by_name["cadence"]   == ["86", "103", "108", "113", "113", "113", "113"]
+    @test by_name["heartrate"] == ["181", "177", "175", "173", "173", "173", "173"]
+    @test by_name["power"]     == ["327.0", "177.0", "179.0", "162.0", "166.0", "177.0", "183.0"]
+
     # ── Lazy path (via LazyKMLFile) ──
     lazy = read(path, LazyKMLFile)
     @test lazy isa LazyKMLFile
     @test get_num_layers(lazy) == 1
     @test get_layer_names(lazy) == ["Tracks"]
 
-    # `parse_geometry_lazy` (tables.jl) currently only recognises
-    # Point / LineString / Polygon / MultiGeometry tags as geometries, so
-    # gx:Track returns `missing` on the lazy DataFrame path. The eager path
-    # above is the way to access gx_Track data programmatically.
+    # `parse_geometry_lazy` recognises gx:Track and returns a populated
+    # `gx_Track` (when + gx_coord). The fast path leaves auxiliary fields
+    # (ExtendedData, Model, Icon, gx_angles) at default — read as `KMLFile`
+    # if you need those.
     df = DataFrame(path)
     @test nrow(df) == 1
     @test df.name[1] == "2010-05-28T01:16:35.000Z"
-    @test ismissing(df.geometry[1])
+    @test df.geometry[1] isa FastKML.gx_Track
+    lazy_track = df.geometry[1]
+    @test length(lazy_track.when)     == 7
+    @test length(lazy_track.gx_coord) == 7
+    @test lazy_track.gx_coord[1]   ≈ SVector(-122.207881, 37.371915, 156.0)
+    @test lazy_track.gx_coord[end] ≈ SVector(-122.203207, 37.374857, 140.199997)
+    @test lazy_track.when[1] isa TimeZones.ZonedDateTime
+    @test lazy_track.ExtendedData === nothing  # documented lazy-path limitation
 end
 
 # ── Network-gated integration tests vs ArchGDAL ─────────────────────────────
