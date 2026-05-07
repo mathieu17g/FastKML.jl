@@ -10,10 +10,10 @@ Sources:
 
 | Schema | Complex candidates | Modeled | Missing |
 |---|---|---|---|
-| OGC KML 2.2 | 58 | 55 | 3 |
-| Google ext. (gx:) | 15 | 14 | 1 |
+| OGC KML 2.2 | 58 | 56 | 2 |
+| Google ext. (gx:) | 15 | 15 | 0 |
 
-FastKML `TAG_TO_TYPE` entries: **80**
+FastKML `TAG_TO_TYPE` entries: **83**
 
 ## OGC KML 2.2
 
@@ -23,14 +23,13 @@ FastKML `TAG_TO_TYPE` entries: **80**
   - Abstract / substitution groups: 124
   - Simple-typed leaves (handled as struct fields): 87
   - Complex-typed candidates: 58
-    - **Modeled in `TAG_TO_TYPE`:** 55
-    - **Missing:** 3
+    - **Modeled in `TAG_TO_TYPE`:** 56
+    - **Missing:** 2
 
 ### Missing complex-typed elements
 
 | name | type | kind |
 |---|---|---|
-| `Metadata` | `kml:MetadataType` | `true_complex` |
 | `innerBoundaryIs` | `kml:BoundaryType` | `true_complex` |
 | `outerBoundaryIs` | `kml:BoundaryType` | `true_complex` |
 
@@ -40,7 +39,7 @@ _`<innerBoundaryIs>` are routed through `Polygon` boundary fields)._
 
 ### Modeled elements (sanity check)
 
-`Alias`, `BalloonStyle`, `Camera`, `Change`, `Create`, `Data`, `Delete`, `Document`, `ExtendedData`, `Folder`, `GroundOverlay`, `Icon`, `IconStyle`, `ImagePyramid`, `ItemIcon`, `LabelStyle`, `LatLonAltBox`, `LatLonBox`, `LineString`, `LineStyle`, `LinearRing`, `Link`, `ListStyle`, `Location`, `Lod`, `LookAt`, `Model`, `MultiGeometry`, `NetworkLink`, `NetworkLinkControl`, `Orientation`, `Pair`, `PhotoOverlay`, `Placemark`, `Point`, `PolyStyle`, `Polygon`, `Region`, `ResourceMap`, `Scale`, `Schema`, `SchemaData`, `ScreenOverlay`, `SimpleData`, `SimpleField`, `Snippet`, `Style`, `StyleMap`, `TimeSpan`, `TimeStamp`, `Update`, `Url`, `ViewVolume`, `kml`, `linkSnippet`
+`Alias`, `BalloonStyle`, `Camera`, `Change`, `Create`, `Data`, `Delete`, `Document`, `ExtendedData`, `Folder`, `GroundOverlay`, `Icon`, `IconStyle`, `ImagePyramid`, `ItemIcon`, `LabelStyle`, `LatLonAltBox`, `LatLonBox`, `LineString`, `LineStyle`, `LinearRing`, `Link`, `ListStyle`, `Location`, `Lod`, `LookAt`, `Metadata`, `Model`, `MultiGeometry`, `NetworkLink`, `NetworkLinkControl`, `Orientation`, `Pair`, `PhotoOverlay`, `Placemark`, `Point`, `PolyStyle`, `Polygon`, `Region`, `ResourceMap`, `Scale`, `Schema`, `SchemaData`, `ScreenOverlay`, `SimpleData`, `SimpleField`, `Snippet`, `Style`, `StyleMap`, `TimeSpan`, `TimeStamp`, `Update`, `Url`, `ViewVolume`, `kml`, `linkSnippet`
 
 ## Google extension (gx:)
 
@@ -50,22 +49,16 @@ _`<innerBoundaryIs>` are routed through `Polygon` boundary fields)._
   - Abstract / substitution groups: 4
   - Simple-typed leaves (handled as struct fields): 24
   - Complex-typed candidates: 15
-    - **Modeled in `TAG_TO_TYPE`:** 14
-    - **Missing:** 1
+    - **Modeled in `TAG_TO_TYPE`:** 15
+    - **Missing:** 0
 
 ### Missing complex-typed elements
 
-| name | type | kind |
-|---|---|---|
-| `ViewerOptions` | `gx:ViewerOptionsType` | `true_complex` |
-
-_Note: some elements may be intentionally unmodeled because they're_
-_handled by special parsing paths (e.g. `<outerBoundaryIs>` /_
-_`<innerBoundaryIs>` are routed through `Polygon` boundary fields)._
+_(none — full coverage of concrete complex elements)_
 
 ### Modeled elements (sanity check)
 
-`AnimatedUpdate`, `FlyTo`, `LatLonQuad`, `MultiTrack`, `Playlist`, `SimpleArrayData`, `SimpleArrayField`, `SoundCue`, `TimeSpan`, `TimeStamp`, `Tour`, `TourControl`, `Track`, `Wait`
+`AnimatedUpdate`, `FlyTo`, `LatLonQuad`, `MultiTrack`, `Playlist`, `SimpleArrayData`, `SimpleArrayField`, `SoundCue`, `TimeSpan`, `TimeStamp`, `Tour`, `TourControl`, `Track`, `ViewerOptions`, `Wait`
 
 ## FastKML registry entries with no XSD counterpart
 

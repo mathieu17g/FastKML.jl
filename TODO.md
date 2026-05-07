@@ -451,18 +451,27 @@ The lazy / `PlacemarkTable` path is unaffected (it doesn't go through
   false negative on `gx:`-prefixed type references) — fixed in
   `tools/audit_kml_coverage.jl`.
 
-- [ ] **Phase 5 — Drive remaining gaps from the audit report.** Post-Phase 4
-  the audit shows two genuine gaps:
-  - **OGC `<Metadata>`** (deprecated, replaced by `<ExtendedData>` per
-    OGC 2.2 spec — assess whether to model for legacy file compat or
-    document the gap explicitly).
-  - **Google `<gx:ViewerOptions>`** — defines viewer behavior during a
-    tour, contains zero or more `<gx:option>` child elements. Used
-    inside `<gx:FlyTo>`. Niche but real; surfaced by re-running
-    `tools/audit_kml_coverage.jl` after Phase 4.
+- [x] **Phase 5 — Drive remaining gaps from the audit report.**
+  Both audit-surfaced gaps closed:
+  - **OGC `<Metadata>`** modeled as a `Feature` child with an opaque
+    `children::Vector{XML.AbstractXMLNode}` field. Special-cased in
+    `object()` so the subtree is preserved verbatim instead of being
+    re-routed through `add_element!` (which would emit "Unhandled tag"
+    warnings for the legacy `<any processContents="lax">` content).
+  - **Google `<gx:ViewerOptions>` + `<gx:option>`** modeled as
+    `Object`-derived structs. `gx_option` carries the `name` and
+    `enabled` attributes alongside the inherited `id`/`targetId`.
+    `gx_ViewerOptions` collects them into `gx_options::Vector{gx_option}`.
+    Added as `@option gx_ViewerOptions` field on `Camera` and `LookAt`
+    (per Google's "contained by Camera, LookAt").
 
-  May also surface `<xal:AddressDetails>` and other foreign-namespace
-  elements depending on real-world fixture coverage.
+  Tests: +6 (Metadata) + +13 (gx_ViewerOptions / gx_option) + +12
+  Empty Constructors auto-coverage. Final audit state (after all 5
+  phases): **OGC 56/58** (only `<outerBoundaryIs>` and `<innerBoundaryIs>`
+  remain, both intentional — handled via `Polygon`'s `handle_polygon_boundary!`
+  and stored as `LinearRing` / `Vector{LinearRing}` fields directly);
+  **Google 15/15 complete**. The 5-phase OGC completeness sweep is
+  closed.
 
 ### Decisions deferred from the design conversation
 

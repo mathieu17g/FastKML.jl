@@ -9,9 +9,10 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
        TimeStamp, TimeSpan, gx_TimeStamp, gx_TimeSpan,
        # Component types
        Link, Icon, Orientation, Location, Scale, Lod, LatLonBox, LatLonAltBox,
-       Region, gx_LatLonQuad, hotSpot, overlayXY, screenXY, rotationXY, size,
+       Region, gx_LatLonQuad, gx_ViewerOptions, gx_option, hotSpot,
+       overlayXY, screenXY, rotationXY, size,
        ItemIcon, ViewVolume, ImagePyramid, Snippet, Data, SimpleData, SchemaData,
-       gx_SimpleArrayData, ExtendedData, Alias, ResourceMap, SimpleField,
+       gx_SimpleArrayData, ExtendedData, Metadata, Alias, ResourceMap, SimpleField,
        gx_SimpleArrayField, Schema, AtomAuthor, AtomLink,
        # Style types
        LineStyle, PolyStyle, IconStyle, LabelStyle, ListStyle, BalloonStyle,
@@ -119,6 +120,7 @@ end
     @option StyleSelectors ::Vector{StyleSelector}
     @option Region ::Region
     @option ExtendedData ::ExtendedData
+    @option Metadata ::Metadata
     @altitude_mode_elements
     @option gx_balloonVisibility ::Bool
 end
@@ -312,6 +314,24 @@ Base.@kwdef mutable struct gx_LatLonQuad <: Object
     gx_LatLonQuad(id, targetId, c::SVector{4, Coord2}) = new(id, targetId, c)
 end
 
+# Google ext: <gx:option name="..." enabled="..."/> tags carry viewer
+# behaviour flags (e.g. streetview, historicalimagery, sunlight). Per
+# kml22gx.xsd they extend AbstractObjectType (id/targetId) plus the two
+# option-specific attributes.
+Base.@kwdef mutable struct gx_option <: KMLElement{(:id, :targetId, :name, :enabled)}
+    @option id ::String
+    @option targetId ::String
+    @option name ::String
+    @option enabled ::Bool
+end
+
+# Google ext: <gx:ViewerOptions> wraps zero-or-more <gx:option> children.
+# Used inside <Camera> / <LookAt> per the Google KML reference.
+Base.@kwdef mutable struct gx_ViewerOptions <: Object
+    @object
+    @option gx_options ::Vector{gx_option}
+end
+
 Base.@kwdef mutable struct ItemIcon <: NoAttributes
     @option state::Enums.itemIconState
     @option href ::String
@@ -366,6 +386,14 @@ end
 
 Base.@kwdef mutable struct ExtendedData <: NoAttributes
     @option children ::Vector{Union{Data,SchemaData,KMLElement}}
+end
+
+# OGC 2.2 §6.7: deprecated container that takes <any processContents="lax">.
+# We don't try to parse the contents — just preserve the raw XML.Node children
+# so legacy KML files round-trip without losing the payload. New files should
+# use <ExtendedData> instead.
+Base.@kwdef mutable struct Metadata <: NoAttributes
+    children::Vector{XML.AbstractXMLNode} = XML.AbstractXMLNode[]
 end
 
 Base.@kwdef mutable struct Alias <: NoAttributes
@@ -485,6 +513,7 @@ end
 Base.@kwdef mutable struct Camera <: AbstractView
     @object
     @option TimePrimitive ::TimePrimitive
+    @option gx_ViewerOptions ::gx_ViewerOptions
     @option longitude ::Float64
     @option latitude ::Float64
     @option altitude ::Float64
@@ -497,6 +526,7 @@ end
 Base.@kwdef mutable struct LookAt <: AbstractView
     @object
     @option TimePrimitive ::TimePrimitive
+    @option gx_ViewerOptions ::gx_ViewerOptions
     @option longitude ::Float64
     @option latitude ::Float64
     @option altitude ::Float64
@@ -816,7 +846,7 @@ function _create_tagsym_cache()
         "Link", "Icon", "Orientation", "Location", "Scale", "Lod",
         "LatLonBox", "LatLonAltBox", "Region", "gx_LatLonQuad",
         "ItemIcon", "ViewVolume", "ImagePyramid", "Snippet",
-        "Data", "SimpleData", "SchemaData", "ExtendedData",
+        "Data", "SimpleData", "SchemaData", "ExtendedData", "Metadata",
         "Alias", "ResourceMap", "SimpleField", "Schema",
         "gx_SimpleArrayField", "gx_SimpleArrayData", "gx_value",
         "atom_author", "atom_link",
@@ -828,6 +858,7 @@ function _create_tagsym_cache()
         # gx: prefixed versions
         "gx:Track", "gx:MultiTrack", "gx:Tour", "gx:Playlist",
         "gx:TimeStamp", "gx:TimeSpan",
+        "gx:ViewerOptions", "gx:option",
         "gx:AnimatedUpdate", "gx:FlyTo", "gx:SoundCue", "gx:TourControl",
         "gx:Wait", "gx:LatLonQuad", "gx:altitudeMode", "gx:altitudeOffset",
         "gx:angles", "gx:balloonVisibility", "gx:coord", "gx:delayedStart",

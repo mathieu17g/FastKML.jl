@@ -118,6 +118,16 @@ function object(node::XML.AbstractXMLNode)
                     end
                 end
             end
+        elseif T === Types.Metadata
+            # OGC 2.2 §6.7 declares Metadata as <any processContents="lax">.
+            # We don't parse the subtree — just preserve raw XML.Node children
+            # for callers who need to inspect them. Avoids spurious
+            # "Unhandled tag" warnings for the (deprecated) inner content.
+            @for_each_immediate_child node child_element_node begin
+                if XML.nodetype(child_element_node) === XML.Element
+                    push!(o.children, child_element_node)
+                end
+            end
         else
             # Generic parsing of child ELEMENTS for all other KMLElement types
             @for_each_immediate_child node child_element_node begin

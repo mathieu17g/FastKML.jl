@@ -926,6 +926,89 @@ end
     @test empty_nlc.AbstractView === nothing
 end
 
+@testset "Metadata (deprecated OGC container)" begin
+    # OGC 2.2 §6.7: <Metadata> is deprecated and contains <any
+    # processContents="lax">. Phase 5 models it as a Feature child whose
+    # `children` field preserves raw XML.AbstractXMLNode references —
+    # opaque content not parsed by add_element!, so we don't emit
+    # spurious "Unhandled tag" warnings for the legacy payload.
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <Placemark>
+          <name>p</name>
+          <Metadata>
+            <foo>123</foo>
+            <bar>hello</bar>
+          </Metadata>
+          <Point><coordinates>1.0,2.0</coordinates></Point>
+        </Placemark>
+      </Document>
+    </kml>
+    """
+
+    # No warning expected — Metadata's children must NOT trigger
+    # "Unhandled tag" emissions in add_element!.
+    file = @test_logs min_level = Logging.Warn parse(KMLFile, kml)
+    pm = FastKML.Utils.find_placemarks(file)[1]
+    @test pm.Metadata isa FastKML.Metadata
+    @test length(pm.Metadata.children) == 2
+    # Raw XML.Node references — caller can introspect via XML.tag.
+    @test XML.tag(pm.Metadata.children[1]) == "foo"
+    @test XML.tag(pm.Metadata.children[2]) == "bar"
+
+    # Empty constructor sanity check
+    @test FastKML.Metadata().children == XML.AbstractXMLNode[]
+end
+
+@testset "gx:ViewerOptions / gx:option (Google extension)" begin
+    # Google ext: <gx:ViewerOptions> wraps zero+ <gx:option> children
+    # inside <Camera> / <LookAt>. Each option carries name + enabled
+    # attributes (e.g. streetview, historicalimagery, sunlight).
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2"
+         xmlns:gx="http://www.google.com/kml/ext/2.2">
+      <Document>
+        <Placemark>
+          <name>p</name>
+          <Camera>
+            <longitude>10.0</longitude>
+            <latitude>20.0</latitude>
+            <altitude>500.0</altitude>
+            <gx:ViewerOptions>
+              <gx:option name="streetview" enabled="true"/>
+              <gx:option name="historicalimagery" enabled="false"/>
+              <gx:option name="sunlight" enabled="true"/>
+            </gx:ViewerOptions>
+          </Camera>
+          <Point><coordinates>10.0,20.0</coordinates></Point>
+        </Placemark>
+      </Document>
+    </kml>
+    """
+
+    file = @test_logs min_level = Logging.Warn parse(KMLFile, kml)
+    pm = FastKML.Utils.find_placemarks(file)[1]
+    cam = pm.AbstractView
+    @test cam isa FastKML.Camera
+    @test cam.gx_ViewerOptions isa FastKML.gx_ViewerOptions
+    vo = cam.gx_ViewerOptions
+    @test length(vo.gx_options) == 3
+    @test vo.gx_options[1].name == "streetview"
+    @test vo.gx_options[1].enabled === true
+    @test vo.gx_options[2].name == "historicalimagery"
+    @test vo.gx_options[2].enabled === false
+    @test vo.gx_options[3].name == "sunlight"
+    @test vo.gx_options[3].enabled === true
+
+    # Empty constructors
+    @test FastKML.gx_ViewerOptions().gx_options === nothing
+    @test FastKML.gx_option().name === nothing
+    @test FastKML.gx_option().enabled === nothing
+end
+
 @testset "Unmodeled top-level tags are skipped, not fatal" begin
     # Regression: real-world feeds (e.g. USGS earthquake animated KML) put
     # unmodeled top-level KML elements alongside the Document
