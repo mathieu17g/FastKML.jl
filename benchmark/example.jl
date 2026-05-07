@@ -21,16 +21,37 @@ using FastKML, GeoMakie, GLMakie, Downloads
 url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month_depth_animated.kml"
 earthquake_file = Downloads.download(url, tempname() * ".kml")
 
-# Read and extract earthquake locations
-df = DataFrame(earthquake_file; layer=1)
+# The USGS feed is stratified by magnitude — each layer is one band.
+lazy = read(earthquake_file, LazyKMLFile)
+list_layers(lazy)
+layer_names = get_layer_names(lazy)
 
-# Visualize on a map
+# Extract magnitude from each layer name (e.g. "Magnitude 7" → 7)
+mags = [parse(Int, match(r"\d+", name).match) for name in layer_names]
+mag_lo, mag_hi = extrema(mags)
+
+# Plot all layers with a cold→hot gradient (low magnitude → cold, high → hot)
 fig = Figure(size=(1200, 800))
 ax = GeoAxis(fig[1,1], title="Recent Earthquakes (M2.5+)")
-lines!(ax, GeoMakie.coastlines())
-for row in eachrow(df)
-    !ismissing(row.geometry) && plot!(ax, row.geometry, color=:red, markersize=8)
+lines!(ax, GeoMakie.coastlines(); color=:gray60, linewidth=0.5)
+
+cmap = cgrad(:plasma)
+
+# Plot from smallest magnitude up so big quakes sit on top
+for i in sortperm(mags)
+    m_df = DataFrame(earthquake_file; layer=i)
+    mag = mags[i]
+    t = mag_hi == mag_lo ? 0.5 : (mag - mag_lo) / (mag_hi - mag_lo)
+    color = cmap[t]
+    msize = 2.0 ^ (mag - 2)  # diameter doubles per magnitude unit
+    for row in eachrow(m_df)
+        !ismissing(row.geometry) && plot!(ax, row.geometry;
+            color=color, markersize=msize,
+            strokecolor=:black, strokewidth=0.5)
+    end
 end
+
+Colorbar(fig[1, 2]; colormap=cmap, limits=(mag_lo, mag_hi), label="Magnitude")
 display(fig)
 
 # Process KMZ files efficiently with lazy loading
