@@ -64,7 +64,15 @@ function parse_kmlfile(doc::XML.AbstractXMLNode)
     kml_children = Vector{Union{XML.AbstractXMLNode,KMLElement}}()
     @for_each_immediate_child kml_element child_node begin
         if XML.nodetype(child_node) === XML.Element
-            push!(kml_children, object(child_node))
+            parsed = object(child_node)
+            # object() can return: a KMLElement (well-modeled tag), an Enum
+            # (only meaningful as a leaf field), a String (simple leaf), or
+            # `nothing` (truly unmodeled — warning already emitted there).
+            # Direct children of <kml> are only meaningful as KMLElement. Anything
+            # else is either malformed KML or an unmodeled top-level element
+            # (e.g. <NetworkLinkControl> in real-world feeds): drop it instead of
+            # crashing the whole parse.
+            parsed isa KMLElement && push!(kml_children, parsed)
         end
         # Skip non-element nodes (text, comments, etc.)
     end

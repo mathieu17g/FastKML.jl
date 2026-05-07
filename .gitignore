@@ -8,3 +8,6 @@ docs/build/
 # preparing PRs against (e.g. XML.jl via [sources] in benchmark/Project.toml).
 # Wipe once the upstream PR is merged or abandoned.
 dev/
+# Cached XSDs downloaded by tools/audit_kml_coverage.jl (re-fetched on demand
+# via --refresh; not committed since they can change upstream).
+tools/.xsd_cache/

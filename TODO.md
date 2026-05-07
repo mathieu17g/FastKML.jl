@@ -275,6 +275,24 @@ Done — extracted from the benchmark:
       `ArchGDAL`, `WellKnownGeometry`, `URIs`, `Scratch`, `Downloads`
       to `test/Project.toml` (resolved during `Pkg.test()` only).
 
+Real-world fixture coverage (planned):
+- [ ] **Exhaustively include the KML examples from
+      https://developers.google.com/kml.** `benchmark/example.jl` was
+      built from a few of those examples (the KML_Samples.kml master
+      file and the per-element snippets). The reference site is the
+      canonical illustration of every element in OGC 2.2 + Google
+      extensions, so its example corpus is the natural ground truth
+      for FastKML's parsing surface. Plan: walk the reference index
+      (https://developers.google.com/kml/documentation/kmlreference),
+      extract every embedded KML snippet, save each as a fixture
+      under `test/fixtures/google_kml_reference/<element>.kml`, and
+      add a parametric testset that asserts each one round-trips
+      through eager + lazy paths without warnings or errors. This
+      cross-cuts with the OGC completeness audit's Phase 5 (drive
+      remaining gaps from real-world fixtures): any snippet that
+      produces an "Unhandled Tag" warning becomes a candidate to
+      model.
+
 ## Code cleanup
 
 - [partial] **Dead-code sweep — JET.jl run on 2026-04-30.** Origin:
@@ -363,3 +381,92 @@ Done — extracted from the benchmark:
 - [x] `benchmark/benchmark_results_*.json` gitignore item is moot —
       the JSON dump was removed from the script in the prune above,
       so no such files are generated anymore.
+
+## OGC 2.2 + Google extensions — completeness audit (planned 2026-05-03)
+
+Surfaced while running `benchmark/example.jl` on 2026-05-03: the eager
+parser `read(file, KMLFile)` crashes on the USGS earthquake feed
+(`2.5_month_depth_animated.kml`) because `<NetworkLinkControl>` is a
+top-level KML 2.2 element FastKML doesn't model. The macro `object()`
+(`src/xml_parsing.jl:193-194`) returns `nothing` for unknown tags after
+emitting the "Unhandled Tag" warning; `parse_kmlfile`
+(`src/xml_parsing.jl:65-70`) then `push!`es that `nothing` into a
+`Vector{Union{XML.AbstractXMLNode,KMLElement}}` → `MethodError`.
+
+The lazy / `PlacemarkTable` path is unaffected (it doesn't go through
+`parse_kmlfile`), so `example.jl` works because it uses
+`DataFrame(file; layer=…)` and `read(file, LazyKMLFile)` everywhere.
+
+### Plan in 5 phases
+
+- [x] **Phase 1 — Fallthrough hardening (option A, with warning kept).**
+  `parse_kmlfile` (`src/xml_parsing.jl:64-77`) now keeps only `KMLElement`
+  results from `object()` — `nothing`, strings, enums, and any other
+  return type are filtered. The "Unhandled Tag" warning in `_object_slow`
+  still fires. Regression test: "Unmodeled top-level tags are skipped,
+  not fatal" in `test/runtests.jl` (4 assertions). USGS earthquake feed
+  no longer crashes in eager mode.
+
+- [x] **Phase 2 — Static audit script.** `tools/audit_kml_coverage.jl`
+  downloads both XSDs (cached under `tools/.xsd_cache/`, gitignored),
+  walks every `<xs:element>` and `<xs:complexType>` declaration,
+  classifies type kinds (`true_complex` / `simple_content` / `simple`),
+  and diffs against `TAG_TO_TYPE` after `using FastKML`. Outputs a
+  markdown report (stdout or `tools/coverage_report.md`).
+
+  **State as of 2026-05-07** (post Phase 3):
+  - OGC: 58 complex candidates → 55 modeled, 3 missing
+    (`Metadata`, `outerBoundaryIs`, `innerBoundaryIs`).
+    The two boundary tags are intentional (Polygon handles them via
+    `handle_polygon_boundary!`); only `Metadata` is a real gap (deprecated
+    in KML 2.2 in favour of `<ExtendedData>`, but still in the schema).
+  - Google ext.: 2/2 complex candidates modeled (full coverage).
+
+  **Wiring decision:** chose **(ii) one-shot tool**. Run with
+  `julia --project=. tools/audit_kml_coverage.jl [out.md] [--refresh]`.
+  Not part of CI — keeps the test suite hermetic (no network) and
+  avoids fail-on-regression friction during in-progress refactors.
+
+- [x] **Phase 3 — `<NetworkLinkControl>` modeling (level A).** Struct
+  added in `src/types.jl` with all 10 OGC fields. `linkSnippet` aliased
+  to `Snippet` via `TAG_TO_TYPE[:linkSnippet] = Snippet`. Auto-populated
+  into the registry via `all_concrete_subtypes(KMLElement)`. Positive
+  test "NetworkLinkControl modeling" in `test/runtests.jl` (22 assertions
+  covering all fields, the linkSnippet alias, and the AbstractView
+  dispatch onto `LookAt`). USGS feed now reads cleanly in eager mode
+  (`minRefreshPeriod=60.0` extracted).
+
+- [ ] **Phase 4 — `<gx:TimeStamp>` / `<gx:TimeSpan>` in `<LookAt>` /
+  `<Camera>`.** Currently emits a warning during parsing
+  (separate concern noted earlier). Same shape as standard
+  `TimeStamp`/`TimeSpan` but at AbstractView level — likely just two
+  alias structs or two fields on the existing AbstractView types.
+
+- [ ] **Phase 5 — Drive remaining gaps from the audit report.**
+  Per Phase 2 audit, the only OGC gap not handled by special parsing
+  is **`<Metadata>`** (deprecated, replaced by ExtendedData per OGC 2.2
+  spec — assess whether to model for legacy file compatibility or
+  document the gap explicitly). May also surface `<xal:AddressDetails>`
+  and other foreign-namespace elements depending on real-world fixture
+  coverage.
+
+### Decisions deferred from the design conversation
+
+1. **Fallthrough strategy — option A vs option B.** Option A selected
+   for Phase 1 and shipped. Option B (introduce an
+   `UnknownKMLElement{tag}` preserving the raw XML subtree) is **not**
+   taken; revisit only if Phase 5 surfaces tags users want to inspect
+   without us modeling them.
+
+2. **Audit script wiring (i/ii/iii)** — chose **(ii)** when Phase 2
+   shipped. Re-evaluate if drift between XSD and `TAG_TO_TYPE` becomes
+   a recurring problem.
+
+### Insight worth remembering
+
+The auto-populate mechanism in `_populate_tag_to_type` (`types.jl:669-703`)
+makes adding a new modeled tag almost free: define the struct, the
+registry picks it up by name. Manual aliases are only needed for tags
+whose XML name doesn't match a struct name (e.g. `<Url>` → `Link`,
+`<atom:author>` → `AtomAuthor`). So the cost of "modeling N more tags"
+scales linearly with N, with no architectural lift.

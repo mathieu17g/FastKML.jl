@@ -2,6 +2,7 @@ using FastKML
 using DataFrames
 using Dates
 using GeoInterface
+using Logging
 using Tables
 using Test
 using TimeZones
@@ -778,6 +779,107 @@ end
     @test lazy_track.gx_coord[end] ≈ SVector(-122.203207, 37.374857, 140.199997)
     @test lazy_track.when[1] isa TimeZones.ZonedDateTime
     @test lazy_track.ExtendedData === nothing  # documented lazy-path limitation
+end
+
+@testset "NetworkLinkControl modeling" begin
+    # OGC 2.2 §12.2: <NetworkLinkControl> is a top-level <kml> child carrying
+    # session metadata for a NetworkLink. All fields are optional; we exercise
+    # all of them here, including the <linkSnippet> alias (Snippet type re-used
+    # under a tag distinct from <Snippet>) and the abstract <AbstractView>
+    # routing (LookAt picked up via abstract type dispatch).
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <NetworkLinkControl>
+        <minRefreshPeriod>0.5</minRefreshPeriod>
+        <maxSessionLength>3600</maxSessionLength>
+        <cookie>session=abc</cookie>
+        <message>System maintenance Friday 14:00 UTC</message>
+        <linkName>Operational Layer</linkName>
+        <linkDescription>Live data feed</linkDescription>
+        <linkSnippet maxLines="3">Snippet text content</linkSnippet>
+        <expires>2026-12-31T23:59:59Z</expires>
+        <LookAt>
+          <longitude>-122.4</longitude>
+          <latitude>37.78</latitude>
+          <altitude>1000</altitude>
+        </LookAt>
+      </NetworkLinkControl>
+      <Document>
+        <name>doc</name>
+      </Document>
+    </kml>
+    """
+
+    # Eager parse: no warning, both children materialized
+    file = @test_logs min_level = Logging.Warn parse(KMLFile, kml)
+    @test length(file.children) == 2
+    @test file.children[1] isa FastKML.NetworkLinkControl
+    @test file.children[2] isa FastKML.Document
+
+    nlc = file.children[1]
+    @test nlc.minRefreshPeriod == 0.5
+    @test nlc.maxSessionLength == 3600.0
+    @test nlc.cookie == "session=abc"
+    @test nlc.message == "System maintenance Friday 14:00 UTC"
+    @test nlc.linkName == "Operational Layer"
+    @test nlc.linkDescription == "Live data feed"
+    @test nlc.expires == "2026-12-31T23:59:59Z"
+    @test nlc.Update === nothing  # not present in fixture
+
+    # linkSnippet is aliased onto the Snippet type; both content and the
+    # maxLines attribute survive.
+    @test nlc.linkSnippet isa FastKML.Snippet
+    @test nlc.linkSnippet.content == "Snippet text content"
+    @test nlc.linkSnippet.maxLines == 3
+
+    # AbstractView dispatch: <LookAt> reached the abstract field.
+    @test nlc.AbstractView isa FastKML.LookAt
+    @test nlc.AbstractView.longitude == -122.4
+    @test nlc.AbstractView.latitude == 37.78
+    @test nlc.AbstractView.altitude == 1000.0
+
+    # Empty constructor still works (covered by the Empty Constructors testset
+    # via all_concrete_subtypes(KMLElement), but spot-check here too)
+    empty_nlc = FastKML.NetworkLinkControl()
+    @test empty_nlc.minRefreshPeriod === nothing
+    @test empty_nlc.message === nothing
+    @test empty_nlc.AbstractView === nothing
+end
+
+@testset "Unmodeled top-level tags are skipped, not fatal" begin
+    # Regression: real-world feeds (e.g. USGS earthquake animated KML) put
+    # unmodeled top-level KML elements alongside the Document
+    # (`<NetworkLinkControl>` in OGC 2.2, future Google extensions, etc.).
+    # `parse_kmlfile` used to call
+    # `push!(::Vector{Union{XML.AbstractXMLNode,KMLElement}}, ::Nothing)`
+    # on the value returned by `object()` for these tags, raising a
+    # MethodError. The fix filters anything that isn't a KMLElement so the
+    # rest of the file remains usable.
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <UnhandledStructuredTag>
+        <message>looks like a NetworkLinkControl</message>
+      </UnhandledStructuredTag>
+      <UnhandledLeafTag>plain text payload</UnhandledLeafTag>
+      <Document>
+        <name>survives the unknown siblings</name>
+      </Document>
+    </kml>
+    """
+
+    # The "Unhandled Tag" warning from `_object_slow` must fire for the
+    # structured tag — silent data loss would be worse than a crash.
+    # (The simple-leaf path does not warn; that's a separate concern.)
+    file = @test_logs (:warn, r"Unhandled Tag.*UnhandledStructuredTag") match_mode = :any begin
+        parse(KMLFile, kml)
+    end
+
+    # Both unknown tags filtered; only the Document survives intact.
+    @test length(file.children) == 1
+    @test file.children[1] isa FastKML.Document
+    @test file.children[1].name == "survives the unknown siblings"
 end
 
 # ── Network-gated integration tests vs ArchGDAL ─────────────────────────────

@@ -24,6 +24,8 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
        Placemark, NetworkLink, Document, Folder, GroundOverlay, ScreenOverlay,
        PhotoOverlay, gx_Tour, gx_Playlist, gx_AnimatedUpdate, gx_FlyTo,
        gx_SoundCue, gx_TourControl, gx_Wait, Update, Create, Delete, Change,
+       # Top-level session control
+       NetworkLinkControl,
        # Utilities
        TAG_TO_TYPE, typemap, all_concrete_subtypes
 
@@ -625,6 +627,23 @@ Base.@kwdef mutable struct Update <: KMLElement{()}
     @option operations ::Vector{Union{Create,Delete,Change}}
 end
 
+# Direct child of <kml>, sibling of Feature (not a Feature itself). Carries
+# session-control metadata for a NetworkLink: refresh cadence, cookies,
+# user-facing strings, plus optional <Update> and <AbstractView> bindings.
+# OGC KML 2.2 §12.2 / xsd: NetworkLinkControlType.
+Base.@kwdef mutable struct NetworkLinkControl <: KMLElement{()}
+    @option minRefreshPeriod ::Float64
+    @option maxSessionLength ::Float64
+    @option cookie ::String
+    @option message ::String
+    @option linkName ::String
+    @option linkDescription ::String
+    @option linkSnippet ::Snippet
+    @option expires ::String
+    @option Update ::Update
+    @option AbstractView ::AbstractView
+end
+
 Base.@kwdef mutable struct gx_AnimatedUpdate <: gx_TourPrimitive
     @object
     @option gx_duration ::Float64
@@ -687,6 +706,7 @@ function _populate_tag_to_type()
     TAG_TO_TYPE[:rotationXY] = hotSpot
     TAG_TO_TYPE[:size] = hotSpot
     TAG_TO_TYPE[:snippet] = Snippet
+    TAG_TO_TYPE[:linkSnippet] = Snippet  # NetworkLinkControl reuses SnippetType under a distinct tag
     TAG_TO_TYPE[:Url] = Link
     TAG_TO_TYPE[:Pair] = StyleMapPair
     TAG_TO_TYPE[:TimeStamp] = TimeStamp
@@ -766,7 +786,8 @@ function _create_tagsym_cache()
     
     # 1. Add all known KML element tags
     kml_tags = [
-        "kml", "Document", "Folder", "Placemark", "NetworkLink",
+        "kml", "Document", "Folder", "Placemark", "NetworkLink", "NetworkLinkControl",
+        "linkSnippet",
         "Point", "LineString", "LinearRing", "Polygon", "MultiGeometry",
         "Model", "gx_Track", "gx_MultiTrack",
         "Style", "StyleMap", "StyleMapPair", "LineStyle", "PolyStyle", 
