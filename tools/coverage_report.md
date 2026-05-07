@@ -1,6 +1,6 @@
 # FastKML coverage audit — OGC KML 2.2 + Google extensions
 
-_Generated 2026-05-07 by `tools/audit_kml_coverage.jl`._
+_Generated 2026-05-08 by `tools/audit_kml_coverage.jl`._
 
 Sources:
 - OGC: <https://schemas.opengis.net/kml/2.2.0/ogckml22.xsd>
@@ -11,9 +11,9 @@ Sources:
 | Schema | Complex candidates | Modeled | Missing |
 |---|---|---|---|
 | OGC KML 2.2 | 58 | 55 | 3 |
-| Google ext. (gx:) | 2 | 2 | 0 |
+| Google ext. (gx:) | 15 | 14 | 1 |
 
-FastKML `TAG_TO_TYPE` entries: **78**
+FastKML `TAG_TO_TYPE` entries: **80**
 
 ## OGC KML 2.2
 
@@ -48,18 +48,24 @@ _`<innerBoundaryIs>` are routed through `Polygon` boundary fields)._
 
 - Element declarations (recursive): 43
   - Abstract / substitution groups: 4
-  - Simple-typed leaves (handled as struct fields): 37
-  - Complex-typed candidates: 2
-    - **Modeled in `TAG_TO_TYPE`:** 2
-    - **Missing:** 0
+  - Simple-typed leaves (handled as struct fields): 24
+  - Complex-typed candidates: 15
+    - **Modeled in `TAG_TO_TYPE`:** 14
+    - **Missing:** 1
 
 ### Missing complex-typed elements
 
-_(none — full coverage of concrete complex elements)_
+| name | type | kind |
+|---|---|---|
+| `ViewerOptions` | `gx:ViewerOptionsType` | `true_complex` |
+
+_Note: some elements may be intentionally unmodeled because they're_
+_handled by special parsing paths (e.g. `<outerBoundaryIs>` /_
+_`<innerBoundaryIs>` are routed through `Polygon` boundary fields)._
 
 ### Modeled elements (sanity check)
 
-`TimeSpan`, `TimeStamp`
+`AnimatedUpdate`, `FlyTo`, `LatLonQuad`, `MultiTrack`, `Playlist`, `SimpleArrayData`, `SimpleArrayField`, `SoundCue`, `TimeSpan`, `TimeStamp`, `Tour`, `TourControl`, `Track`, `Wait`
 
 ## FastKML registry entries with no XSD counterpart
 

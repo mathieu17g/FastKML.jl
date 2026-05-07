@@ -436,19 +436,33 @@ The lazy / `PlacemarkTable` path is unaffected (it doesn't go through
   dispatch onto `LookAt`). USGS feed now reads cleanly in eager mode
   (`minRefreshPeriod=60.0` extracted).
 
-- [ ] **Phase 4 — `<gx:TimeStamp>` / `<gx:TimeSpan>` in `<LookAt>` /
-  `<Camera>`.** Currently emits a warning during parsing
-  (separate concern noted earlier). Same shape as standard
-  `TimeStamp`/`TimeSpan` but at AbstractView level — likely just two
-  alias structs or two fields on the existing AbstractView types.
+- [x] **Phase 4 — `<gx:TimeStamp>` / `<gx:TimeSpan>` in `<LookAt>` /
+  `<Camera>`.** Defined `gx_TimeStamp` and `gx_TimeSpan` as
+  `TimePrimitive` subtypes (mirroring the OGC `TimeStamp`/`TimeSpan`
+  structs). **Crucially, no field added to Camera/LookAt** — those
+  already declare `@option TimePrimitive ::TimePrimitive`, and the
+  abstract-type dispatch in `assign_complex_object!` (pass 1) routes
+  `gx_TimeStamp` / `gx_TimeSpan` there automatically. Map_field_name
+  extended to handle gx_TimeSpan's `begin`/`end` keyword remap.
+  Phase-4-specific testset (11 assertions) plus +8 from auto-expanded
+  Empty Constructors. The existing gx:Track parsing testset no longer
+  emits the "Unhandled Tag: gx:TimeSpan" warning. Audit also surfaced
+  two script bugs (false positive on bare-name match across schemas;
+  false negative on `gx:`-prefixed type references) — fixed in
+  `tools/audit_kml_coverage.jl`.
 
-- [ ] **Phase 5 — Drive remaining gaps from the audit report.**
-  Per Phase 2 audit, the only OGC gap not handled by special parsing
-  is **`<Metadata>`** (deprecated, replaced by ExtendedData per OGC 2.2
-  spec — assess whether to model for legacy file compatibility or
-  document the gap explicitly). May also surface `<xal:AddressDetails>`
-  and other foreign-namespace elements depending on real-world fixture
-  coverage.
+- [ ] **Phase 5 — Drive remaining gaps from the audit report.** Post-Phase 4
+  the audit shows two genuine gaps:
+  - **OGC `<Metadata>`** (deprecated, replaced by `<ExtendedData>` per
+    OGC 2.2 spec — assess whether to model for legacy file compat or
+    document the gap explicitly).
+  - **Google `<gx:ViewerOptions>`** — defines viewer behavior during a
+    tour, contains zero or more `<gx:option>` child elements. Used
+    inside `<gx:FlyTo>`. Niche but real; surfaced by re-running
+    `tools/audit_kml_coverage.jl` after Phase 4.
+
+  May also surface `<xal:AddressDetails>` and other foreign-namespace
+  elements depending on real-world fixture coverage.
 
 ### Decisions deferred from the design conversation
 

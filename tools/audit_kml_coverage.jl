@@ -130,17 +130,28 @@ Returns `(kind::Symbol, candidate::Bool)`.
 """
 function classify_element(e::NamedTuple, type_kinds::Dict{String,Symbol})
     e.abstract && return (:abstract, false)
+    # OGC and Google XSDs use the `Abstract*` naming convention for
+    # substitution-group heads (e.g. `gx:AbstractTourPrimitive`). The XSD
+    # doesn't always set `abstract="true"` on these, so use the name as a
+    # fallback signal to avoid false-positive "missing" reports.
+    startswith(e.name, "Abstract") && return (:abstract, false)
     isempty(e.type) && return (:unknown, false)
-    if startswith(e.type, "kml:")
-        bare = e.type[5:end]
-        kind = get(type_kinds, bare, :external)
-        if kind === :true_complex || kind === :simple_content
-            return (kind, true)
-        else
-            return (kind, false)
-        end
+    # Accept both kml: (OGC) and gx: (Google ext) qualified type references —
+    # the Google XSD uses both. Anything else is an XSD primitive (xs:string,
+    # xs:double, …) or an unqualified name resolved against the default
+    # namespace, which here is always xs: in OGC files.
+    bare = if startswith(e.type, "kml:")
+        e.type[5:end]
+    elseif startswith(e.type, "gx:")
+        e.type[4:end]
+    else
+        return (:primitive, false)
     end
-    return (:primitive, false)
+    kind = get(type_kinds, bare, :external)
+    if kind === :true_complex || kind === :simple_content
+        return (kind, true)
+    end
+    return (kind, false)
 end
 
 # ─── Coverage diff ───────────────────────────────────────────────────────────
@@ -184,9 +195,14 @@ function coverage_diff(
 
     found = NamedTuple[]
     missing = NamedTuple[]
+    # The prefixed form is the only valid match — `gx:TimeStamp` is a
+    # genuinely distinct element from OGC `<TimeStamp>` even though they
+    # share the same Type. Don't fall back to the bare name or the audit
+    # would falsely credit Google extensions as modeled whenever the OGC
+    # variant is registered.
     for e in candidates
         symname = tag_prefix * e.name
-        if symname in modeled || e.name in modeled
+        if symname in modeled
             push!(found, e)
         else
             push!(missing, e)

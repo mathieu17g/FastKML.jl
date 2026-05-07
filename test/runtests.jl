@@ -781,6 +781,85 @@ end
     @test lazy_track.ExtendedData === nothing  # documented lazy-path limitation
 end
 
+@testset "gx:TimeStamp / gx:TimeSpan in AbstractView" begin
+    # Google extension: <gx:TimeStamp> and <gx:TimeSpan> are children of
+    # <Camera> / <LookAt>, attaching a time component to a view (something
+    # OGC 2.2 doesn't model directly). They share the field shape of the
+    # standard TimePrimitive types and ride the existing
+    # `Camera.TimePrimitive` / `LookAt.TimePrimitive` field via abstract-type
+    # dispatch in `assign_complex_object!`.
+
+    # ── Existing fixture: gx_Track_example.kml has a <gx:TimeSpan> in <LookAt> ──
+    # Before Phase 4 this fired the "Unhandled Tag: gx:TimeSpan" warning and
+    # the LookAt's TimePrimitive stayed `nothing`. Now it parses cleanly.
+    file = read(joinpath(@__DIR__, "gx_Track_example.kml"), KMLFile)
+    function find_first_lookat(node)
+        function walk(o)
+            o isa FastKML.LookAt && return o
+            for f in fieldnames(typeof(o))
+                v = getfield(o, f)
+                if v isa FastKML.KMLElement
+                    r = walk(v); r !== nothing && return r
+                elseif v isa AbstractVector
+                    for x in v
+                        if x isa FastKML.KMLElement
+                            r = walk(x); r !== nothing && return r
+                        end
+                    end
+                end
+            end
+            return nothing
+        end
+        for c in node.children
+            if c isa FastKML.KMLElement
+                r = walk(c); r !== nothing && return r
+            end
+        end
+        return nothing
+    end
+
+    la = find_first_lookat(file)
+    @test la !== nothing
+    @test la.TimePrimitive isa FastKML.gx_TimeSpan
+    span = la.TimePrimitive
+    @test span.begin_ isa TimeZones.ZonedDateTime
+    @test span.end_   isa TimeZones.ZonedDateTime
+    @test span.begin_ < span.end_
+
+    # ── Synthetic: <gx:TimeStamp> in <Camera> ──
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2"
+         xmlns:gx="http://www.google.com/kml/ext/2.2">
+      <Document>
+        <Placemark>
+          <name>p1</name>
+          <Camera>
+            <gx:TimeStamp>
+              <when>2008-06-15T12:30:00Z</when>
+            </gx:TimeStamp>
+            <longitude>10.0</longitude>
+            <latitude>20.0</latitude>
+            <altitude>500.0</altitude>
+          </Camera>
+          <Point><coordinates>10.0,20.0</coordinates></Point>
+        </Placemark>
+      </Document>
+    </kml>
+    """
+    file2 = parse(KMLFile, kml)
+    pm = FastKML.Utils.find_placemarks(file2)[1]
+    @test pm.AbstractView isa FastKML.Camera
+    @test pm.AbstractView.TimePrimitive isa FastKML.gx_TimeStamp
+    @test pm.AbstractView.TimePrimitive.when isa TimeZones.ZonedDateTime
+
+    # Empty constructor (also covered by the Empty Constructors testset
+    # via all_concrete_subtypes(KMLElement), spot-check explicitly here).
+    @test FastKML.gx_TimeStamp().when === nothing
+    @test FastKML.gx_TimeSpan().begin_ === nothing
+    @test FastKML.gx_TimeSpan().end_ === nothing
+end
+
 @testset "NetworkLinkControl modeling" begin
     # OGC 2.2 §12.2: <NetworkLinkControl> is a top-level <kml> child carrying
     # session metadata for a NetworkLink. All fields are optional; we exercise

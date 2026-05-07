@@ -357,8 +357,9 @@ function is_time_primitive_type(T::Type)
 end
 
 function map_field_name(parent, field_name::Symbol)::Symbol
-    # Special mappings for specific types
-    if parent isa Types.TimeSpan
+    # `begin` and `end` are Julia reserved keywords — TimeSpan and gx_TimeSpan
+    # store them as `begin_` / `end_`. Remap on the way in.
+    if parent isa Types.TimeSpan || parent isa Types.gx_TimeSpan
         if field_name === :begin
             return :begin_
         elseif field_name === :end

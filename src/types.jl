@@ -6,7 +6,7 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
        # Coordinate types
        Coord2, Coord3,
        # Time types
-       TimeStamp, TimeSpan,
+       TimeStamp, TimeSpan, gx_TimeStamp, gx_TimeSpan,
        # Component types
        Link, Icon, Orientation, Location, Scale, Lod, LatLonBox, LatLonAltBox,
        Region, gx_LatLonQuad, hotSpot, overlayXY, screenXY, rotationXY, size,
@@ -181,6 +181,22 @@ Base.@kwdef mutable struct TimeStamp <: TimePrimitive
 end
 
 Base.@kwdef mutable struct TimeSpan <: TimePrimitive
+    @object
+    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+end
+
+# Google extension: same shape as TimeStamp / TimeSpan but used inside
+# <Camera> / <LookAt> (AbstractView), where standard KML 2.2 doesn't support
+# a TimePrimitive child. The Camera / LookAt structs already declare a
+# TimePrimitive field, so the abstract-type dispatch in assign_complex_object!
+# routes <gx:TimeStamp> / <gx:TimeSpan> there automatically.
+Base.@kwdef mutable struct gx_TimeStamp <: TimePrimitive
+    @object
+    @option when ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+end
+
+Base.@kwdef mutable struct gx_TimeSpan <: TimePrimitive
     @object
     @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
     @option end_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
@@ -793,7 +809,8 @@ function _create_tagsym_cache()
         "Style", "StyleMap", "StyleMapPair", "LineStyle", "PolyStyle", 
         "IconStyle", "LabelStyle", "ListStyle", "BalloonStyle",
         "Camera", "LookAt", "GroundOverlay", "ScreenOverlay", "PhotoOverlay",
-        "TimeStamp", "TimeSpan", "gx_Tour", "gx_Playlist", "gx_AnimatedUpdate",
+        "TimeStamp", "TimeSpan", "gx_TimeStamp", "gx_TimeSpan",
+        "gx_Tour", "gx_Playlist", "gx_AnimatedUpdate",
         "gx_FlyTo", "gx_SoundCue", "gx_TourControl", "gx_Wait",
         "Update", "Create", "Delete", "Change",
         "Link", "Icon", "Orientation", "Location", "Scale", "Lod",
@@ -810,6 +827,7 @@ function _create_tagsym_cache()
         "outerBoundaryIs", "innerBoundaryIs",
         # gx: prefixed versions
         "gx:Track", "gx:MultiTrack", "gx:Tour", "gx:Playlist",
+        "gx:TimeStamp", "gx:TimeSpan",
         "gx:AnimatedUpdate", "gx:FlyTo", "gx:SoundCue", "gx:TourControl",
         "gx:Wait", "gx:LatLonQuad", "gx:altitudeMode", "gx:altitudeOffset",
         "gx:angles", "gx:balloonVisibility", "gx:coord", "gx:delayedStart",
