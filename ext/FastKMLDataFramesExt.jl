@@ -8,7 +8,7 @@ import FastKML: KMLFile, LazyKMLFile, PlacemarkTable, read
 
 
 """
-    DataFrame(kml_file::Union{FastKML.KMLFile,FastKML.LazyKMLFile}; layer::Union{Nothing,String,Integer}=nothing, simplify_single_parts::Bool=false)
+    DataFrame(kml_file::Union{FastKML.KMLFile,FastKML.LazyKMLFile}; layer=nothing, simplify_single_parts=false)
 
 Constructs a DataFrame from the Placemarks in a `KMLFile` or `LazyKMLFile` object.
 
@@ -17,12 +17,26 @@ Constructs a DataFrame from the Placemarks in a `KMLFile` or `LazyKMLFile` objec
   - `kml_file::Union{FastKML.KMLFile,FastKML.LazyKMLFile}`: The KML file object already read into memory.
     LazyKMLFile is more efficient for this use case as it doesn't materialize the entire KML structure.
 
-  - `layer::Union{Nothing,String,Integer}=nothing`: Specifies the layer to extract Placemarks from.
+  - `layer::Union{Nothing,String,Integer,Symbol}=nothing`: Specifies the layer to extract Placemarks from.
 
-      + If `nothing` (default): The behavior is defined by `FastKML.PlacemarkTable` (e.g., attempts to find a default layer or prompts if multiple are available and in interactive mode).
-      + If `String`: The name of the Document or Folder to use as the layer.
-      + If `Integer`: The index of the layer to use.
+      + If `nothing` (default): single-layer mode with default selection. Behavior defined by `FastKML.PlacemarkTable` (picks the unique layer, or prompts/warns when multiple are available). Schema is `(name, description, geometry)`.
+      + If `String`: single-layer mode by name (the `name` of a Document or Folder).
+      + If `Integer`: single-layer mode by 1-based index (matching `get_layer_names`).
+      + If `:all`: **multi-layer mode** — walks the document once and yields every placemark across every layer in a single pass. The DataFrame gains two columns: `(layer_idx::Int, layer_name::String, name, description, geometry)`, so duplicate layer names stay distinguishable. Replaces the manual `[DataFrame(file; layer=k) for k in 1:n]; vcat(...; cols=:union)` pattern.
   - `simplify_single_parts::Bool=false`: If `true`, when a MultiGeometry contains only a single geometry part, that part is extracted directly, simplifying the structure. For example, a MultiGeometry containing a single LineString will be treated as a LineString. Defaults to `false`.
+
+# Examples
+
+```julia
+# Default single-layer (one column trio: name, description, geometry)
+df = DataFrame(file)
+
+# Specific layer by index
+df = DataFrame(file; layer = 2)
+
+# All layers in one pass (gains layer_idx, layer_name columns)
+df = DataFrame(file; layer = :all)
+```
 """
 function DataFrames.DataFrame(
     kml_file::Union{FastKML.KMLFile,FastKML.LazyKMLFile};
@@ -34,7 +48,7 @@ function DataFrames.DataFrame(
 end
 
 """
-    DataFrame(kml_path::AbstractString; layer::Union{Nothing,String,Integer}=nothing, simplify_single_parts::Bool=false, lazy::Bool=true)
+    DataFrame(kml_path::AbstractString; layer=nothing, simplify_single_parts=false, lazy=true)
 
 Constructs a DataFrame from the Placemarks in a KML file specified by its path.
 
@@ -42,11 +56,12 @@ Constructs a DataFrame from the Placemarks in a KML file specified by its path.
 
   - `kml_path::AbstractString`: Path to the .kml or .kmz file.
 
-  - `layer::Union{Nothing,String,Integer}=nothing`: Specifies the layer to extract Placemarks from.
+  - `layer::Union{Nothing,String,Integer,Symbol}=nothing`: Specifies the layer to extract Placemarks from.
 
-      + If `nothing` (default): The behavior is defined by `FastKML.PlacemarkTable` (e.g., attempts to find a default layer or prompts if multiple are available and in interactive mode).
-      + If `String`: The name of the Document or Folder to use as the layer.
-      + If `Integer`: The index of the layer to use.
+      + If `nothing` (default): single-layer mode with default selection (picks unique layer or prompts/warns when multiple). Schema `(name, description, geometry)`.
+      + If `String`: single-layer mode by `name`.
+      + If `Integer`: single-layer mode by 1-based index.
+      + If `:all`: multi-layer mode — single-pass extraction across every layer with a 5-column schema `(layer_idx, layer_name, name, description, geometry)`.
   - `simplify_single_parts::Bool=false`: If `true`, when a MultiGeometry contains only a single geometry part, it will be simplified to that single geometry. For example, a MultiGeometry containing a single Point will become just a Point. Defaults to `false`.
   - `lazy::Bool=true`: If `true` (default), uses `LazyKMLFile` for better performance when only extracting placemarks.
     If `false`, uses regular `KMLFile` which materializes the entire KML structure.
@@ -66,6 +81,9 @@ df = DataFrame("file.kml"; layer = "Points of Interest")
 
 # Select layer by index
 df = DataFrame("file.kml"; layer = 2)
+
+# Get every layer's features in a single pass (5-column schema)
+df = DataFrame("file.kml"; layer = :all)
 ```
 """
 function DataFrames.DataFrame(

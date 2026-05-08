@@ -17,7 +17,14 @@ node representations are what make `KMLFile` and `LazyKMLFile` possible.
 - Lenient handling of non-conformant inputs — see [Coordinate parsing](coordinate_parsing.md).
 - A `LazyKMLFile` mode (powered by `XML.LazyNode`) that defers materialization for large files.
 - KMZ (zipped KML) support via a `ZipArchives` weak-dependency extension.
-- Multi-layer awareness (`Document` / `Folder` introspection).
+- Multi-layer awareness (`Document` / `Folder` introspection), with a
+  single-pass `layer = :all` mode that walks every layer in one
+  traversal and returns a layer-tagged DataFrame.
+- Comprehensive coverage of OGC KML 2.2 + Google `gx:` extensions —
+  `<NetworkLinkControl>`, `<Metadata>`, `<gx:TimeStamp>` /
+  `<gx:TimeSpan>` on `<Camera>` / `<LookAt>`, `<gx:ViewerOptions>` and
+  `<gx:option>`, `<gx:Track>` with per-coord auxiliary arrays. An XSD
+  audit script in `tools/` keeps the registry in sync with the spec.
 - A [Tables.jl](https://github.com/JuliaData/Tables.jl) interface over
   Placemarks, plus opt-in `DataFrames`, `GeoInterface`, and `Makie`
   extensions.
@@ -61,6 +68,18 @@ file = KMLFile(
     ),
 )
 FastKML.write("dc.kml", file)
+```
+
+For files that expose multiple layers (e.g. USGS qfaults.kmz with 8
+thematic Folders, or USGS earthquake feeds stratified by magnitude),
+`layer = :all` extracts every placemark in a single pass with the
+source layer tagged on each row:
+
+```julia
+using FastKML, DataFrames
+
+df = DataFrame("multi_layer.kml"; layer = :all)
+# 5 columns: layer_idx, layer_name, name, description, geometry
 ```
 
 ## Where to go next

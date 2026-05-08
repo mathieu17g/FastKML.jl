@@ -262,7 +262,25 @@ end
     PlacemarkTable(source; layer=nothing, simplify_single_parts=false)
 
 A lazy, streaming Tables.jl table of the placemarks in a KML file.
-You can call it either with a path or with an already-loaded `KMLFile` or `LazyKMLFile`.
+You can call it either with a path or with an already-loaded `KMLFile`
+or `LazyKMLFile`.
+
+## `layer` keyword
+
+- `nothing` (default) — single-layer mode. Picks the unique layer if
+  there is one, prompts (interactive) or warns + picks the first
+  (non-interactive) when multiple layers exist. Schema:
+  `(name::String, description::String, geometry::Union{Missing,Geometry})`.
+- `Integer` — single-layer mode by 1-based index.
+- `String` — single-layer mode by layer name.
+- `:all` — **multi-layer mode**. Walks the document once and yields
+  every placemark across every layer in a single pass, instead of
+  forcing the caller to loop `[PlacemarkTable(file; layer=k) for k in
+  1:n]` and concatenate. Adds two columns to the schema:
+  `(layer_idx::Int, layer_name::String, name, description, geometry)`,
+  so duplicate layer names stay distinguishable via `layer_idx`.
+
+Any other `Symbol` value is rejected at construction time.
 """
 struct PlacemarkTable
     file::Union{KMLFile,LazyKMLFile}

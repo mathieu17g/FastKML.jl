@@ -3,11 +3,12 @@
 FastKML.jl offers two read modes plus a dedicated tabular extraction
 path, each making a different cost/completeness trade-off:
 
-| Mode                                       | What you get                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `read(path, KMLFile)`                      | Full struct hierarchy — every KML element materialized as a typed Julia object     |
-| `read(path, LazyKMLFile)`                  | An `XML.LazyNode` tree — no parsing into Julia structs until you walk it           |
-| `DataFrame(path)` / `PlacemarkTable(path)` | Fast extraction over the lazy tree — only `name`, `description`, `geometry`        |
+| Mode                                                | What you get                                                                       |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `read(path, KMLFile)`                               | Full struct hierarchy — every KML element materialized as a typed Julia object     |
+| `read(path, LazyKMLFile)`                           | An `XML.LazyNode` tree — no parsing into Julia structs until you walk it           |
+| `DataFrame(path)` / `PlacemarkTable(path)`          | Fast single-layer extraction over the lazy tree — `(name, description, geometry)`  |
+| `DataFrame(path; layer=:all)` / `PlacemarkTable(path; layer=:all)` | Single-pass extraction across every layer — `(layer_idx, layer_name, name, description, geometry)` |
 
 This page documents the **most surprising** practical consequence of
 that split: `ExtendedData` is **only populated on the eager path**.
@@ -94,13 +95,50 @@ This path is useful for very large files where you need a few specific
 fields beyond the canonical three columns and don't want to pay for full
 materialization.
 
+## Multi-layer files: `layer = :all`
+
+Many real-world KML feeds expose features stratified across multiple
+top-level `<Document>` / `<Folder>` containers — e.g. USGS qfaults.kmz
+with 8 thematic Folders, or the USGS earthquake feed split into 6
+magnitude bands. The default `DataFrame(path)` picks only one layer
+(prompting interactively or warning + first-layer otherwise), which
+silently drops the other layers' content.
+
+`layer = :all` walks the document **once** and returns every
+placemark across every layer in a single pass, with the source layer
+tagged on each row:
+
+```julia
+using FastKML, DataFrames
+
+df = DataFrame("qfaults.kml"; layer = :all)
+# 5 columns: layer_idx, layer_name, name, description, geometry
+
+# Group rows by layer for downstream processing:
+using DataFrames
+combine(groupby(df, [:layer_idx, :layer_name]), nrow => :n_features)
+```
+
+`layer_idx` (1-based) is added alongside `layer_name` because two
+sibling Folders can share the same `<name>` — the index disambiguates
+them. Replaces the manual `vcat` loop pattern:
+
+```julia
+# Old idiom (no longer needed):
+file = read(path, LazyKMLFile)
+n = get_num_layers(file)
+dfs = [DataFrame(file; layer = k) for k in 1:n]
+df = vcat(dfs...; cols = :union)   # loses layer attribution
+```
+
 ## When to choose which
 
-| Situation                                                                                  | Use                              |
-| ------------------------------------------------------------------------------------------ | -------------------------------- |
-| Geometry-only extraction, into a DataFrame                                                 | `DataFrame(path)`                |
-| You need `ExtendedData` (custom fields, schema arrays, per-Track aux data, …)              | `read(path, KMLFile)` — eager    |
-| Custom traversal — pick a few extra fields out of a huge file                              | `read(path, LazyKMLFile)`        |
+| Situation                                                                                  | Use                                                |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Single-layer file (or you only want one layer), DataFrame consumer                         | `DataFrame(path)` or `DataFrame(path; layer = k)`  |
+| Multi-layer file, want every feature with layer attribution                                | `DataFrame(path; layer = :all)`                    |
+| You need `ExtendedData` (custom fields, schema arrays, per-Track aux data, …)              | `read(path, KMLFile)` — eager                      |
+| Custom traversal — pick a few extra fields out of a huge file                              | `read(path, LazyKMLFile)`                          |
 
 If you started with `DataFrame(path)` and later realize you need
 `ExtendedData`, just re-read the file as `KMLFile`. The eager path
