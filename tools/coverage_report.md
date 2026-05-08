@@ -58,7 +58,7 @@ _(none — full coverage of concrete complex elements)_
 
 ### Modeled elements (sanity check)
 
-`AnimatedUpdate`, `FlyTo`, `LatLonQuad`, `MultiTrack`, `Playlist`, `SimpleArrayData`, `SimpleArrayField`, `SoundCue`, `TimeSpan`, `TimeStamp`, `Tour`, `TourControl`, `Track`, `ViewerOptions`, `Wait`
+`gx:AnimatedUpdate`, `gx:FlyTo`, `gx:LatLonQuad`, `gx:MultiTrack`, `gx:Playlist`, `gx:SimpleArrayData`, `gx:SimpleArrayField`, `gx:SoundCue`, `gx:TimeSpan`, `gx:TimeStamp`, `gx:Tour`, `gx:TourControl`, `gx:Track`, `gx:ViewerOptions`, `gx:Wait`
 
 ## FastKML registry entries with no XSD counterpart
 

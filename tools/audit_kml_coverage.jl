@@ -234,7 +234,7 @@ function format_table(rows::Vector{<:NamedTuple}, columns::Vector{Symbol})
     return String(take!(out))
 end
 
-function format_section_diff(diff, label::String)
+function format_section_diff(diff, label::String; xml_prefix::String="")
     out = IOBuffer()
     println(out, "## $label")
     println(out)
@@ -252,7 +252,12 @@ function format_section_diff(diff, label::String)
     if isempty(diff.missing)
         println(out, "_(none — full coverage of concrete complex elements)_")
     else
-        print(out, format_table(diff.missing, [:name, :type, :kind]))
+        # XSD declares elements with their local name only — both OGC and the
+        # Google ext. have an `<element name="TimeStamp">` declaration, distinguishable
+        # only by their target namespace. Prepend the XML namespace prefix so
+        # readers don't confuse the two.
+        qualified_missing = [merge(e, (name = xml_prefix * e.name,)) for e in diff.missing]
+        print(out, format_table(qualified_missing, [:name, :type, :kind]))
         println(out)
         println(out, "_Note: some elements may be intentionally unmodeled because they're_")
         println(out, "_handled by special parsing paths (e.g. `<outerBoundaryIs>` /_")
@@ -264,7 +269,7 @@ function format_section_diff(diff, label::String)
     if isempty(diff.found)
         println(out, "_(none)_")
     else
-        names = ["`$(e.name)`" for e in diff.found]
+        names = ["`$(xml_prefix * e.name)`" for e in diff.found]
         println(out, join(names, ", "))
     end
     println(out)
@@ -324,7 +329,7 @@ function generate_report(; refresh::Bool=false)
     println(out)
 
     print(out, format_section_diff(ogc_diff, "OGC KML 2.2"))
-    print(out, format_section_diff(google_diff, "Google extension (gx:)"))
+    print(out, format_section_diff(google_diff, "Google extension (gx:)"; xml_prefix="gx:"))
 
     println(out, "## FastKML registry entries with no XSD counterpart")
     println(out)
