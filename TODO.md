@@ -144,6 +144,23 @@ Open items accumulated during development. Add to it; tick off as you go.
           override in `benchmark/Project.toml` and the `dev/` entry
           in `.gitignore` stay in place. Once #54 lands, re-evaluate
           the path forward against the new upstream API.
+        - **Status update 2026-05-08** (post OGC-completeness sweep):
+          rebased `wip-xml-next-bang-adoption` onto current `main` (was
+          stuck pre-OGC at commit `07cd49e`); rebase replayed cleanly
+          with no conflicts. Fresh A/B on URL4 (`WRS-2_bound_world_0.kml`,
+          28 557 placemarks) confirms the gains hold post-sweep:
+          | Metric          | main (`XML.next`) | wip (`XML.next!`) | Δ      |
+          |-----------------|-------------------|-------------------|--------|
+          | Median time     | 350.6 ms          | 266.4 ms          | **-24%** |
+          | Memory          | 1024.5 MiB        | 488.6 MiB         | **-52%** |
+          | Allocs          | 14.2 M            | 8.4 M             | **-41%** |
+          Tracked allocations under `--track-allocation=user` collapsed
+          from 374 MiB → 49.5 MiB (-87%): the 4 sites previously bunched
+          near 75–87 MiB each (`@for_each_immediate_child` expansions in
+          `Layers.jl:89/175`, `tables.jl:45/207`) all dropped below 14 MiB.
+          Confirms `next!` adoption is the main lever for memory; time
+          gain comes from fewer GC pauses, not from per-call walk speed.
+          577 tests still pass on the rebased branch.
     - **Residual hot sites after round 3 (still structural)**:
       `Parsers.Result` per parse (~38 MiB), `Vector{Float64}` payload
       (~13 MiB), final `Vector{SVector{3,Float64}}` (~23 MiB), the
