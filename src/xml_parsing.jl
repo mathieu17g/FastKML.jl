@@ -1,6 +1,6 @@
 module XMLParsing
 
-export object, extract_text_content_fast
+export object, extract_text_content_fast, _peek_text_content
 
 using TimeZones
 using Dates
@@ -45,6 +45,53 @@ function extract_text_content_fast(node::XML.AbstractXMLNode)
                 end
             end
         end
+    end
+    if extras !== nothing
+        return join(extras)
+    elseif found !== nothing
+        return found
+    else
+        return ""
+    end
+end
+
+"""
+    _peek_text_content(node::XML.LazyNode) -> String
+
+Lazy-only fast path for text extraction. Walks `node.raw` directly via
+`XML.next(::Raw)` instead of routing through `@for_each_immediate_child`,
+which sidesteps the per-call `LazyNode` allocation that the macro pays
+on its initial `XML.next(_node)` invocation.
+
+Same accumulation semantics as `extract_text_content_fast`: scans
+descendants at any depth below the input's current position and joins
+all `Text`/`CData` fragments found. The input `LazyNode` is **not
+mutated** — Raw iteration keeps the LazyNode's raw pointer untouched,
+so the calling `@for_each_immediate_child` can continue iterating
+siblings without depth-skip surprises (the trap that bites
+`<name></name>` empty-content tags if we mutated `node` in place).
+"""
+@inline function _peek_text_content(node::XML.LazyNode)
+    initial_depth = XML.depth(node.raw)
+    found::Union{Nothing,String} = nothing
+    extras::Union{Nothing,Vector{String}} = nothing
+    raw = XML.next(node.raw)
+    while raw !== nothing && XML.depth(raw) > initial_depth
+        # `RawElementClose` tokens fall through unchanged — the type test
+        # below ignores them, depth tracking handles termination.
+        if raw.type === XML.RawText || raw.type === XML.RawCData
+            text_value = XML.value(raw)
+            if text_value !== nothing
+                if found === nothing
+                    found = text_value
+                elseif extras === nothing
+                    extras = String[found, text_value]
+                else
+                    push!(extras, text_value)
+                end
+            end
+        end
+        raw = XML.next(raw)
     end
     if extras !== nothing
         return join(extras)

@@ -7,7 +7,7 @@ import ..Layers: get_layer_info, select_layer
 import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, Geometry,
                 LinearRing, Point, LineString, Polygon, MultiGeometry, Coord2, Coord3,
                 gx_Track
-import ..XMLParsing: object, extract_text_content_fast
+import ..XMLParsing: object, extract_text_content_fast, _peek_text_content
 import ..Macros: @find_immediate_child, @for_each_immediate_child
 import ..HtmlEntities: decode_named_entities
 import ..Coordinates: parse_coordinates_automa
@@ -77,7 +77,7 @@ function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
         end
         
         if coord_child !== nothing
-            coord_text = extract_text_content_fast(coord_child)
+            coord_text = _peek_text_content(coord_child)
             coords = parse_coordinates_automa(coord_text)
             if !isempty(coords)
                 return Point(; coordinates = coords[1])
@@ -91,7 +91,7 @@ function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
         end
         
         if coord_child !== nothing
-            coord_text = extract_text_content_fast(coord_child)
+            coord_text = _peek_text_content(coord_child)
             coords = parse_coordinates_automa(coord_text)
             return LineString(; coordinates = isempty(coords) ? nothing : coords)
         end
@@ -157,10 +157,10 @@ function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
             XML.nodetype(child) === XML.Element || continue
             child_tag = tag(child)
             if child_tag == "when"
-                txt = extract_text_content_fast(child)
+                txt = _peek_text_content(child)
                 push!(when_vals, parse_iso8601(txt; warn = false))
             elseif child_tag == "gx:coord"
-                txt = extract_text_content_fast(child)
+                txt = _peek_text_content(child)
                 coords = parse_coordinates_automa(txt)
                 if !isempty(coords)
                     c = coords[1]
@@ -210,13 +210,16 @@ function extract_placemark_fields_lazy(placemark_node::XML.AbstractXMLNode)
         child_tag = tag(child)
         
         if child_tag == "name" && !has_name
-            name = extract_text_content_fast(child)
+            # Raw-level walk avoids the per-call LazyNode allocation that
+            # `extract_text_content_fast` pays via @for_each_immediate_child;
+            # safe because `_peek_text_content` doesn't mutate `child`.
+            name = _peek_text_content(child)
             if occursin('&', name)
                 name = decode_named_entities(name)
             end
             has_name = true
         elseif child_tag == "description" && !has_description
-            description = extract_text_content_fast(child)
+            description = _peek_text_content(child)
             has_description = true
         elseif child_tag in ("Point", "LineString", "Polygon", "MultiGeometry", "gx:Track") && !has_geometry
             geometry = parse_geometry_lazy(child)
