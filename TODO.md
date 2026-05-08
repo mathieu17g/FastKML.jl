@@ -144,6 +144,25 @@ Open items accumulated during development. Add to it; tick off as you go.
           override in `benchmark/Project.toml` and the `dev/` entry
           in `.gitignore` stay in place. Once #54 lands, re-evaluate
           the path forward against the new upstream API.
+        - **Status update 2026-05-08 — full benchmark milestone.** With
+          `wip-xml-next-bang-adoption + dev-combined + _peek_text_content`
+          (the `next!` adoption + raw-level text extraction in lazy paths),
+          FastKML now beats ArchGDAL on **all four benchmark URLs** in
+          time, with a clean reversal on URL5 (the multi-layer file that
+          was the outstanding gap):
+          | URL                 | Time FastKML / ArchGDAL | Δ vs ArchGDAL | Δ vs main |
+          |---------------------|-------------------------|---------------|-----------|
+          | URL2 enzone (5.4k)  | 192 / 257 ms            | **+25%**      | -6%       |
+          | URL4 WRS-2 (28.5k)  | 255 / 320 ms            | **+20%**      | -26%      |
+          | URL5 qfaults (114k) | 2363 / 2574 ms          | **+8%** (was -15%) | **-20%** |
+          | URL6 nat. frs       | 1249 / 3319 ms          | **+62%**      | -30%      |
+          Memory tracked by BenchmarkTools dropped 30–54% across the four
+          URLs vs `main`. The headline reversal is URL5 — a 24pp swing
+          (-15% → +8%) — driven by the `next!` adoption removing
+          per-traversal `LazyNode` allocations on the deep multi-layer
+          walk. `dev/XML.jl + wip` remains the active local baseline; see
+          the "Patching XML.jl from FastKML" item below for the path to
+          delivering these gains without the dev/ override.
     - **Residual hot sites after round 3 (still structural)**:
       `Parsers.Result` per parse (~38 MiB), `Vector{Float64}` payload
       (~13 MiB), final `Vector{SVector{3,Float64}}` (~23 MiB), the
@@ -177,7 +196,7 @@ Open items accumulated during development. Add to it; tick off as you go.
       Real leverage for the URL5 gap is in **per-Placemark single-pass
       extraction** (next item) — that's the ~12× re-tokenization site
       where ArchGDAL's C++ data sharing wins.
-- [ ] Single-pass per-Placemark extraction. Surfaced by the URL4
+- [partial] Single-pass per-Placemark extraction. Surfaced by the URL4
       profile (Apr 2026): each Placemark's subtree is currently walked
       ~12× the logical token count, because
       `_collect_placemarks_optimized!`,
@@ -187,10 +206,107 @@ Open items accumulated during development. Add to it; tick off as you go.
       `next_no_xml_space` (~4.8 M calls for 28 k Placemarks). A
       refactor where one outer walk dispatches by tag/depth and
       threads field extraction inline would roughly halve traversal
-      cost on wide-and-shallow files. Not urgent now that FastKML
-      already beats ArchGDAL on URL4 (1.18× faster after the upstream
-      XML.jl fixes), but worth doing if perf becomes a competitive
-      pressure later.
+      cost on wide-and-shallow files.
+
+      **Done on `wip-xml-next-bang-adoption` (commit `5d436c7`,
+      2026-05-08):** added `_peek_text_content(::XML.LazyNode)` in
+      `xml_parsing.jl` — walks `node.raw` directly via `XML.next(::Raw)`
+      instead of routing through `@for_each_immediate_child`, so it
+      doesn't pay the per-call `LazyNode` allocation that the macro
+      otherwise costs on its initial `XML.next(_node)`. Crucially does
+      NOT mutate the input LazyNode (Raw iteration leaves the LazyNode
+      pointer alone), so callers within an outer
+      `@for_each_immediate_child` body can keep iterating siblings
+      without depth-skip surprises (the trap that bites
+      `<name></name>` empty-content tags if we mutated `child` in
+      place). Five lazy-path call sites switched over (`name`,
+      `description`, `<coordinates>` for Point/LineString, `<when>` /
+      `<gx:coord>` for gx:Track, `<coordinates>` for LinearRing).
+      Saved ~5 MiB of tracked allocations (49.5 → 44.2 MiB on URL4)
+      and ~1-2% wall-clock — modest on top of the headline `next!`
+      gain, but real and risk-free.
+
+- [ ] **Piste 1 — Radical single-pass per-Placemark refactor.** The
+      remaining `@for_each_immediate_child` outer-walk allocations
+      after `_peek_text_content` are structural: ~14 MiB at
+      `tables.jl:207` (the outer walk over each Placemark's children
+      in `extract_placemark_fields_lazy`) plus ~5 MiB at
+      `tables.jl:104` (the Polygon walk in `parse_geometry_lazy`),
+      both scaled by the placemark count. Each walk allocates one
+      `LazyNode` upfront via `XML.next(_node)` then uses `next!` for
+      subsequent steps; with N=28 557 placemarks on URL4 that's ~28k
+      allocations of ~500 bytes each = 14 MiB, and the same shape for
+      Polygon. The only way to remove these is to **fuse** the
+      walks: a single deep walk per Placemark that dispatches by
+      `(tag, depth)` and threads field extraction inline (instead of
+      having `parse_geometry_lazy` re-walk Polygon's children, walk
+      them as part of the outer pass and identify boundaries by
+      depth=2 inside a `Polygon` open at depth=1). Substantial
+      refactor — affects `extract_placemark_fields_lazy`,
+      `parse_geometry_lazy`, and `parse_linear_ring_lazy`. Worth ~20
+      MiB of tracked allocs on URL4 (50% of the post-`next!`
+      residual), modest wall-clock gain (~3-5%). Not urgent now that
+      FastKML beats ArchGDAL on all four benchmark URLs.
+
+- [ ] **Piste 2 — Hand-rolled Float64 scanner in the Coordinates
+      FSM.** Top non-walk hot sites after `next!` + `_peek_text_content`:
+      `Coordinates.jl:111` (7.2 MiB) and `Coordinates.jl:130`
+      (4.8 MiB) — together ~12 MiB on URL4. Origin documented in the
+      "Residual hot sites after round 3" note above:
+      `Parsers.Result{Float64}` is allocated per parsed float
+      (~38 MiB cumulative on URL2) and `Vector{Float64}` payload
+      grows during accumulation. To eliminate, replace
+      `Parsers.parse(Float64, view(...))` with a hand-rolled scanner
+      embedded directly in the Automa FSM that drives
+      `parse_coordinates_automa`. Avoids the `Parsers.Result`
+      indirection entirely and lets us write floats straight into
+      the pre-`sizehint!`'d `Vector{Float64}` without intermediate
+      tuples. ~12 MiB savings on URL4, more on coordinate-heavy files.
+      Tradeoff: ~50 LOC of float parsing logic to maintain, plus the
+      Automa state machine grows. Recommend deferring until the
+      coordinate path becomes the dominant cost.
+
+- [ ] **Patching XML.jl from FastKML — alternative to the
+      `dev/XML.jl/` override.** Question raised 2026-05-08: rather
+      than waiting on XML.jl#54 to land before delivering the
+      `wip-xml-next-bang-adoption` gains to registry users, can
+      FastKML inject the equivalent of PRs #58 / #59 at load time?
+
+      **PR #59 (next!/prev! addition) — feasible without type piracy.**
+      Define `FastKML.next!(o::XML.LazyNode)` (and `prev!`) as private
+      helpers in FastKML, dispatching on the foreign `XML.LazyNode`
+      type but living under FastKML's own function name — that's a
+      regular method definition, not piracy. Implementation copies
+      the upstream PR ~12 LOC: read `o.raw`, `XML.next(o.raw)`, skip
+      `RawElementClose`, `setfield!(o, :raw, ...)` to mutate. Uses
+      `XML.LazyNode`'s field structure (`raw`, `tag`, `attributes`,
+      `value`) which is currently public-ish but considered internal
+      — accept the fragility as the cost of bypassing upstream
+      latency. The FastKML macros in `src/macros.jl` then call
+      `FastKML.next!` instead of `XML.next!`. Drop the
+      `dev/XML.jl/` requirement entirely; FastKML works against the
+      registry XML.jl. Estimated 30 LOC change in FastKML, no
+      behavioural risk if XML.jl 0.4 later ships its own `next!` (we
+      keep using ours; the namespaces don't collide).
+
+      **PR #58 (`next_no_xml_space` ctx-share, ~6 LOC) — harder.**
+      The patch is INSIDE an existing XML.jl method, so delivering it
+      from FastKML means either (a) `@eval`-ing a redefinition of
+      `XML.next_no_xml_space` at `__init__` (full type piracy +
+      method-redefinition warnings + invalidations), or (b)
+      vendoring the entire `next_xml_space`/`next_no_xml_space`
+      chain (~30 LOC) as private FastKML helpers and routing our
+      `next!` through them. Option (b) is the cleanest but doubles
+      the maintenance surface. Worth ~60 MiB on URL2 per the round-3
+      analysis, but URL2 is already 25% faster than ArchGDAL —
+      diminishing returns. Recommend skipping #58 entirely from
+      FastKML's side; just ship #59's gains via the private-helper
+      route.
+
+      **Decision deferred** — the dev/XML.jl override is fine while
+      we're in active development. Revisit when (i) we want to
+      register FastKML.jl, OR (ii) XML.jl#54 stalls beyond a few
+      months. Whichever comes first.
 
 ## Test coverage
 
