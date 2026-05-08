@@ -266,26 +266,45 @@ You can call it either with a path or with an already-loaded `KMLFile` or `LazyK
 """
 struct PlacemarkTable
     file::Union{KMLFile,LazyKMLFile}
-    layer::Union{Nothing,String,Integer}
+    # `Symbol` form is reserved for `:all` — single-pass extraction across
+    # every layer. Any other Symbol is rejected at construction time.
+    layer::Union{Nothing,String,Integer,Symbol}
     simplify_single_parts::Bool
+
+    function PlacemarkTable(file, layer, simplify_single_parts)
+        if layer isa Symbol && layer !== :all
+            error("Unsupported Symbol layer spec: :$layer. The only accepted Symbol value is `:all`.")
+        end
+        return new(file, layer, simplify_single_parts)
+    end
 end
 
 PlacemarkTable(
     file::Union{KMLFile,LazyKMLFile};
-    layer::Union{Nothing,String,Integer} = nothing,
+    layer::Union{Nothing,String,Integer,Symbol} = nothing,
     simplify_single_parts::Bool = false,
 ) = PlacemarkTable(file, layer, simplify_single_parts)
 
-PlacemarkTable(path::AbstractString; layer::Union{Nothing,String,Integer} = nothing, simplify_single_parts::Bool = false) =
+PlacemarkTable(path::AbstractString; layer::Union{Nothing,String,Integer,Symbol} = nothing, simplify_single_parts::Bool = false) =
     PlacemarkTable(Base.read(path, LazyKMLFile); layer = layer, simplify_single_parts = simplify_single_parts)
 
 #──────────────────────────────── Tables.jl API ──────────────────────────────────#
 Tables.istable(::Type{<:PlacemarkTable}) = true
 Tables.rowaccess(::Type{<:PlacemarkTable}) = true
 
-Tables.schema(::PlacemarkTable) = Tables.Schema((:name, :description, :geometry), (String, String, Union{Missing,Geometry}))
+Tables.schema(tbl::PlacemarkTable) = if tbl.layer === :all
+    Tables.Schema(
+        (:layer_idx, :layer_name, :name, :description, :geometry),
+        (Int, String, String, String, Union{Missing,Geometry}),
+    )
+else
+    Tables.Schema((:name, :description, :geometry), (String, String, Union{Missing,Geometry}))
+end
 
 function Tables.rows(tbl::PlacemarkTable)
+    if tbl.layer === :all
+        return _all_layers_rows(tbl)
+    end
     it = _placemark_iterator(tbl.file, tbl.layer)
 
     if tbl.file isa LazyKMLFile
@@ -324,6 +343,59 @@ function Tables.rows(tbl::PlacemarkTable)
     end
 end
 
+# Single-pass iteration across every layer. Walks `get_layer_info` once,
+# then iterates each layer's source in turn — no redundant per-layer
+# enumeration the way N independent `DataFrame(file; layer=k)` calls
+# would force. Yields rows tagged with the (1-based) `layer_idx` and
+# `layer_name` for unambiguous attribution when two layers share a name.
+function _all_layers_rows(tbl::PlacemarkTable)
+    layer_options = get_layer_info(tbl.file)
+    if tbl.file isa LazyKMLFile
+        return Iterators.flatten(
+            (
+                let idx = idx, lname = lname, pl = pl
+                    geom_to_return = pl.geometry
+                    if tbl.simplify_single_parts && !ismissing(geom_to_return)
+                        geom_to_return = unwrap_single_part_multigeometry(geom_to_return)
+                    end
+                    (
+                        layer_idx = idx,
+                        layer_name = lname,
+                        name = pl.name,
+                        description = pl.description,
+                        geometry = geom_to_return,
+                    )
+                end for pl in EagerLazyPlacemarkIterator(source)
+            ) for (idx, lname, source) in layer_options
+        )
+    else
+        return Iterators.flatten(
+            (
+                let idx = idx, lname = lname, pl = pl
+                    desc = pl.description === nothing ? "" : pl.description
+                    name_str = pl.name === nothing ? "" : pl.name
+                    processed_name = if pl.name !== nothing && occursin('&', name_str)
+                        decode_named_entities(name_str)
+                    else
+                        name_str
+                    end
+                    geom_to_return = pl.Geometry
+                    if tbl.simplify_single_parts
+                        geom_to_return = unwrap_single_part_multigeometry(geom_to_return)
+                    end
+                    (
+                        layer_idx = idx,
+                        layer_name = lname,
+                        name = processed_name,
+                        description = desc,
+                        geometry = geom_to_return,
+                    )
+                end for pl in _iter_feat(source) if pl isa Placemark
+            ) for (idx, lname, source) in layer_options
+        )
+    end
+end
+
 # --- Tables.jl API for KMLFile and LazyKMLFile ---
 Tables.istable(::Type{KMLFile}) = true
 Tables.istable(::Type{LazyKMLFile}) = true
@@ -332,7 +404,7 @@ Tables.rowaccess(::Type{LazyKMLFile}) = true
 
 function Tables.schema(
     k::Union{KMLFile,LazyKMLFile};
-    layer::Union{Nothing,String,Integer} = nothing,
+    layer::Union{Nothing,String,Integer,Symbol} = nothing,
     simplify_single_parts::Bool = false,
 )
     return Tables.schema(PlacemarkTable(k; layer = layer, simplify_single_parts = simplify_single_parts))
@@ -340,7 +412,7 @@ end
 
 function Tables.rows(
     k::Union{KMLFile,LazyKMLFile};
-    layer::Union{Nothing,String,Integer} = nothing,
+    layer::Union{Nothing,String,Integer,Symbol} = nothing,
     simplify_single_parts::Bool = false,
 )
     return Tables.rows(PlacemarkTable(k; layer = layer, simplify_single_parts = simplify_single_parts))

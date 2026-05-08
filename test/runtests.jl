@@ -679,6 +679,69 @@ end
     @test DataFrame(eg; simplify_single_parts = true) isa DataFrame
 end
 
+@testset "layer=:all single-pass extraction" begin
+    # Multi-layer fixture with a deliberate duplicate layer name (`Layer A`
+    # appears twice). The dedicated layer_idx column distinguishes them so
+    # downstream consumers don't need to invent fallback identifiers.
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <Folder>
+          <name>Layer A</name>
+          <Placemark><name>p1</name><Point><coordinates>1.0,2.0</coordinates></Point></Placemark>
+          <Placemark><name>p2</name><Point><coordinates>3.0,4.0</coordinates></Point></Placemark>
+        </Folder>
+        <Folder>
+          <name>Layer B</name>
+          <Placemark><name>p3</name><Point><coordinates>5.0,6.0</coordinates></Point></Placemark>
+        </Folder>
+        <Folder>
+          <name>Layer A</name>
+          <Placemark><name>dup1</name><Point><coordinates>7.0,8.0</coordinates></Point></Placemark>
+        </Folder>
+      </Document>
+    </kml>
+    """
+
+    # ── Lazy path ──
+    file_lazy = parse(LazyKMLFile, kml)
+    df_lazy = DataFrame(file_lazy; layer = :all)
+    @test names(df_lazy) == ["layer_idx", "layer_name", "name", "description", "geometry"]
+    @test nrow(df_lazy) == 4
+    @test df_lazy.layer_idx  == [1, 1, 2, 3]
+    @test df_lazy.layer_name == ["Layer A", "Layer A", "Layer B", "Layer A"]
+    @test df_lazy.name       == ["p1", "p2", "p3", "dup1"]
+    # Duplicate-name layers stay distinguishable via layer_idx
+    @test count(==("Layer A"), df_lazy.layer_name) == 3
+    @test Set(df_lazy.layer_idx[df_lazy.layer_name .== "Layer A"]) == Set([1, 3])
+
+    # ── Eager path ──
+    file_eager = parse(KMLFile, kml)
+    df_eager = DataFrame(file_eager; layer = :all)
+    @test nrow(df_eager) == 4
+    @test df_eager.layer_idx  == [1, 1, 2, 3]
+    @test df_eager.layer_name == ["Layer A", "Layer A", "Layer B", "Layer A"]
+    @test df_eager.name       == ["p1", "p2", "p3", "dup1"]
+
+    # ── Tables.jl schema honors :all ──
+    pt = FastKML.PlacemarkTable(file_lazy; layer = :all)
+    sch = Tables.schema(pt)
+    @test sch.names == (:layer_idx, :layer_name, :name, :description, :geometry)
+    @test sch.types == (Int, String, String, String, Union{Missing,FastKML.Geometry})
+
+    # ── Symbol validation ──
+    # The constructor should reject any Symbol other than :all.
+    @test_throws ErrorException FastKML.PlacemarkTable(file_lazy; layer = :first)
+    @test_throws ErrorException FastKML.PlacemarkTable(file_lazy; layer = :all_layers)
+
+    # ── Existing single-layer modes still keep the 3-column schema ──
+    pt_single = FastKML.PlacemarkTable(file_lazy; layer = 1)
+    sch_single = Tables.schema(pt_single)
+    @test sch_single.names == (:name, :description, :geometry)
+    @test nrow(DataFrame(file_lazy; layer = 1)) == 2  # Layer A (idx 1) has 2 placemarks
+end
+
 @testset "HTML entity decoding" begin
     decode = FastKML.HtmlEntities.decode_named_entities
 

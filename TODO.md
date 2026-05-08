@@ -156,22 +156,27 @@ Open items accumulated during development. Add to it; tick off as you go.
       (`KMLFile` tree → `PlacemarkTable` → `DataFrame`) by going
       `LazyKMLFile` → `DataFrame` directly when DataFrames is the
       consumer.
-- [ ] Multi-layer extraction in a single pass. Surfaced by the URL5
-      benchmark fix (`bf64708`): when a KML exposes N top-level layers
-      and a consumer wants every feature, the current public API forces
-      N independent `DataFrame(file; layer = k)` calls, each of which
-      walks the `LazyKMLFile` tree from the root to find layer k and
-      then iterates its placemarks. ArchGDAL's `getlayer` shares the
-      C++ dataset, so its per-layer cost is near-zero. On URL5
-      (qfaults.kmz, 8 thematic Folders, 114 k features) FastKML ends
-      up ~10–15% slower than ArchGDAL end-to-end despite being faster
-      per-feature; on `wip-xml-next-bang-adoption` (with the upstream
-      XML.jl fixes adopted) the 8-layer iteration overhead is the
-      dominant slowdown. Possible designs: a `DataFrame(file)` /
-      `PlacemarkTable(file)` overload that walks the document **once**
-      and assigns each Placemark to its containing layer in a single
-      pass, or expose an iterator that yields `(layer_idx, placemark)`
-      pairs the consumer can group however it wants.
+- [x] Multi-layer extraction via a single API call. Shipped as
+      `DataFrame(file; layer = :all)` / `PlacemarkTable(file; layer = :all)`,
+      returning a 5-column schema `(layer_idx, layer_name, name, description,
+      geometry)` so duplicate layer names stay distinguishable. Replaces the
+      manual `[DataFrame(file; layer=k) for k in 1:n]; vcat(...; cols=:union)`
+      pattern that benchmark/benchmark_kml_parsers.jl had to spell out.
+
+      **Caveat — this did NOT close the URL5 perf gap.** Median timing on
+      URL5 (qfaults.kml, 114k features) measured at 2452 ms (old N-fold)
+      vs 2522 ms (new `:all`); the difference is well inside the >300 ms
+      run-to-run variance. Memory ~3.5 GiB in both modes. The hypothesis
+      that "8-layer iteration overhead is the dominant slowdown" was
+      overstated — once the upstream XML.jl fixes from PRs #58/#59 are
+      adopted, the redundant `select_layer` enumeration is dwarfed by the
+      deep per-Placemark walk that both modes perform identically. The two
+      extra columns in `:all` mode add ~30 MiB of row-construction overhead
+      that offsets any micro-gain.
+
+      Real leverage for the URL5 gap is in **per-Placemark single-pass
+      extraction** (next item) — that's the ~12× re-tokenization site
+      where ArchGDAL's C++ data sharing wins.
 - [ ] Single-pass per-Placemark extraction. Surfaced by the URL4
       profile (Apr 2026): each Placemark's subtree is currently walked
       ~12× the logical token count, because

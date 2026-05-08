@@ -26,7 +26,7 @@ Constructs a DataFrame from the Placemarks in a `KMLFile` or `LazyKMLFile` objec
 """
 function DataFrames.DataFrame(
     kml_file::Union{FastKML.KMLFile,FastKML.LazyKMLFile};
-    layer::Union{Nothing,String,Integer} = nothing,
+    layer::Union{Nothing,String,Integer,Symbol} = nothing,
     simplify_single_parts::Bool = false,
 )
     placemark_table = FastKML.PlacemarkTable(kml_file; layer = layer, simplify_single_parts = simplify_single_parts)
@@ -70,7 +70,7 @@ df = DataFrame("file.kml"; layer = 2)
 """
 function DataFrames.DataFrame(
     kml_path::AbstractString;
-    layer::Union{Nothing,String,Integer} = nothing,
+    layer::Union{Nothing,String,Integer,Symbol} = nothing,
     simplify_single_parts::Bool = false,
     lazy::Bool = true,
 )
