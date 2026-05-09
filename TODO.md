@@ -1,430 +1,114 @@
 # TODO
 
-Open items accumulated during development. Add to it; tick off as you go.
+Active work, deferred decisions, lessons learned, and an archive of
+completed milestones. For released changes, see
+[`CHANGELOG.md`](CHANGELOG.md).
 
-## Benchmark — investigation
+---
 
-- [x] **URL1 (`USEDO.kmz`) — resolved.** Source is non-conformant KML:
-      coordinates use comma-only delimiters with no whitespace between
-      tuples (`lon1,lat1,0,lon2,lat2,0,…`). FastKML's parser is lenient
-      by design and recovers the correct geometry; ArchGDAL is strict
-      and reduces each ring to a single point. Not a FastKML bug.
-      Documented in `docs/src/coordinate_parsing.md` and tested in
-      `test/runtests.jl`.
-- [x] **URL3 (`Aglim1.kmz`) — resolved.** Same root cause as URL1: ESDAC /
-      KMLer-generated, comma-only-delimited coordinates with no
-      whitespace between tuples. Verified directly on the raw XML
-      (first `<coordinates>` starts with the same byte sequence as
-      USEDO.kmz, suggesting ESDAC re-uses the same geometry across
-      products). Side observation: rows where the source has a nested
-      `<MultiGeometry>` containing only `<Polygon>` children round-trip
-      as `MULTIPOLYGON Z (...)` via FastKML and as `GEOMETRYCOLLECTION
-      Z (POLYGON Z (...))` via ArchGDAL — both are valid OGC Simple
-      Features WKT representations of the same data, but downstream
-      consumers that branch on geometry type will see them as distinct.
-- [x] **URL6 (`national_frs.kmz`) — resolved.** Three distinct findings:
-      (i) FastKML had a real bug in `decode_named_entities` (sliced on
-      char index instead of byte index, crashing on multi-byte UTF-8
-      next to entities) — fixed in 889a275, with regression tests;
-      (ii) the row count mismatch (FastKML 163k vs ArchGDAL 4) was a
-      **layer-semantics divergence**, not a bug. FastKML exposes 3
-      top-level Document/Folder layers (the first contains all 163k
-      placemarks recursively); ArchGDAL flattens to 19 122 leaf-folder
-      layers (one per city), so `getlayer(dataset, 0)` only sees the
-      first city. Updated `table_with_archgdal` to concatenate ALL
-      ArchGDAL layers by default. Also extended the description
-      normalization to `\s+` (was `[\r\n]+`) so tab-run differences in
-      EPA's HTML descriptions aren't reported as content mismatches.
-      (iii) After (i)+(ii), 49 small name-column diffs remained: one
-      with a leading whitespace (FastKML preserves; ArchGDAL strips) and
-      48 with `&AMP;` vs `&` (the source uses the non-conformant
-      uppercase HTML5 entity; FastKML decodes via `NAMED_HTML_ENTITIES`,
-      ArchGDAL preserves raw). Resolved by symmetric name-column
-      normalization in the benchmark: `strip` + `decode_named_entities`
-      on both sides. Plus one residual: row 48072 has malformed
-      `<coordinates>,,0</coordinates>` — FastKML returns `Float64[]`,
-      ArchGDAL substitutes `(0,0,0)`. This is a genuine fallback-policy
-      difference on invalid input; documented as accepted divergence.
-- [ ] After URL3/URL6, sweep across the improved diagnostics
-      (`diff @ char N`, WKT `.val`) on any other diverging (non-iso)
-      file we come across and decide row-by-row which interpretation is
-      correct against the raw XML.
-- [x] **URL4 (`WRS-2_bound_world_0.kml`) — resolved on
-      `wip-xml-next-bang-adoption + dev-combined`.** With both XML.jl
-      fixes (#58, #59) adopted, FastKML is now ~1.18× *faster* than
-      ArchGDAL on this file (256 ms vs 301 ms; previously 14% slower
-      on `main`). The slowdown was driven by per-call XML allocations
-      that the upstream PRs eliminate. Profile-wise, the dominant
-      remaining cost is **structural** (~4.8 M `next_no_xml_space`
-      calls / ~12× the logical token count per Placemark) because
-      FastKML walks each Placemark's subtree multiple times — once in
-      `_collect_placemarks_optimized!`, once in
-      `extract_placemark_fields_lazy`, plus extra inside
-      `parse_geometry_lazy` and `extract_text_content_fast`. A
-      single-pass refactor (one tree walk dispatching by tag/depth)
-      would roughly halve traversal cost on wide-and-shallow files;
-      see the deferred-perf list below — the original concern
-      ("FastKML slower on URL4") is resolved so we don't need it now.
+## Active items
 
-## Performance
+### Performance — pistes (deferred)
 
-- [partial] Memory allocation profile.
-    - Tooling: `benchmark/profile_memory.jl` (FastKML) and
-      `benchmark/profile_memory_archgdal.jl` (ArchGDAL baseline) drive
-      the hot path on a representative file with
-      `--track-allocation=user`. Analyze the resulting `*.mem` files
-      with `Coverage.analyze_malloc`.
-    - **Round 1 (commit `4d9408e`)**: tracked allocations 240 MiB →
-      123 MiB (-49%) on URL2. End-to-end benchmark cumulative memory
-      444 MiB → 327 MiB (-27%). Time unchanged. Fixes:
-        - `xml_parsing.extract_text_content_fast`: fast-path the common
-          0/1-fragment case to skip `Vector{String}` + `join` per call
-          (108 MiB → 3 MiB on this site).
-        - `Coordinates.parse_coordinates_automa`: enable a heuristic
-          `sizehint!` on the floats vector (~12 MiB win on URL2).
-    - **ArchGDAL baseline**: 0.66 MiB tracked Julia allocations on the
-      same file. ~190× lower than FastKML, but the comparison is
-      misleading because GDAL does the XML parsing and geometry
-      construction in C++ (invisible to Julia's allocation tracker).
-      Realistic target for FastKML's tracked allocations is on the
-      order of the data payload (DataFrame columns + parsed floats +
-      String contents), not 1 MiB.
-    - **Round 2**: tested two hypotheses, neither moved the needle on
-      URL2:
-        - Replacing `Parsers.parse(Float64, view(data_bytes, …))` with
-          `Parsers.xparse(Float64, data_bytes, pos, len, …)` to avoid
-          per-call SubArray allocation. Identical bytes attributed
-          (50.5 MiB) — the SubArray was being elided. The remaining
-          ~38 MiB is `Parsers.Result{Float64}` allocated per parsed
-          float; the rest is the Vector{Float64} storage. Reverted.
-        - Typing `features = []` as `XML.LazyNode[]` in
-          `Layers._lazy_top_level_features` — saved only ~50 bytes.
-          The ~9 MiB attributed to those `@for_each_immediate_child`
-          callsites is from `XML.next(_current)` allocating a fresh
-          `LazyNode` per traversal step (~1 M nodes for a 47 MiB KML),
-          not from boxing pushes. Kept the change for correctness, but
-          no perf impact. Real fix would need XML.jl-side support for
-          a non-allocating iterator.
-    - **Round 3 (upstream PRs against XML.jl)**: the round-2 review
-      had identified ~30 MiB of `XML.LazyNode` allocations per `next`
-      and ~60 MiB of `Bool[false]` ctx allocations per `next_no_xml_space`
-      as the top remaining sites; both lend themselves to small
-      upstream fixes. Two PR-sized changes prepared in
-      `mathieu17g/XML.jl`:
-        - `perf-share-default-ctx` branch (~6 LOC): when
-          `next_no_xml_space` is reached the document has no
-          `xml:space` attribute, so the per-node ctx is always
-          `Bool[false]` and never mutated — share the parent's instead
-          of allocating a fresh `[false]` per call. Saves ~60 MiB on
-          URL2.
-        - `feature-next-bang` branch (~54 LOC): add `next!` / `prev!`
-          methods that mutate a `LazyNode` in place. Strictly additive,
-          documented aliasing contract. FastKML adoption (on
-          `wip-xml-next-bang-adoption` branch) switches
-          `@for_each_immediate_child` to `next!` and snapshots `child`
-          at the three Layers.jl callsites that retain references.
-          Combined with PR #1, drops URL2 cumulative memory 444 → 193
-          MiB (-57%) and wall-clock 213 → 190 ms (-11%); 234 tests
-          green; iso comparison vs ArchGDAL still ✔.
-        - **Submitted**: PR
-          [JuliaComputing/XML.jl#58](https://github.com/JuliaComputing/XML.jl/pull/58)
-          (ctx share) and [#59](https://github.com/JuliaComputing/XML.jl/pull/59)
-          (next!/prev!). KML.jl#14 has been closed with a pointer back
-          to FastKML.jl as the home for this work.
-        - **Status update 2026-04-30**: joshday reviewed #59 and
-          pointed at
-          [`XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54),
-          a major renovation in flight that may overlap with or
-          supersede the perf concerns these PRs address. **#58 and
-          #59 are on hold pending #54.** In the meantime keep using
-          the patched XML.jl in `dev/XML.jl/` and the FastKML
-          adaptation on `wip-xml-next-bang-adoption` as the active
-          local working baseline (benchmarks and ongoing dev run
-          against the patched stack). The `[sources] XML = …`
-          override in `benchmark/Project.toml` and the `dev/` entry
-          in `.gitignore` stay in place. Once #54 lands, re-evaluate
-          the path forward against the new upstream API.
-        - **Status update 2026-05-08 — full benchmark milestone.** With
-          `wip-xml-next-bang-adoption + dev-combined + _peek_text_content`
-          (the `next!` adoption + raw-level text extraction in lazy paths),
-          FastKML now beats ArchGDAL on **all four benchmark URLs** in
-          time, with a clean reversal on URL5 (the multi-layer file that
-          was the outstanding gap):
-          | URL                 | Time FastKML / ArchGDAL | Δ vs ArchGDAL | Δ vs main |
-          |---------------------|-------------------------|---------------|-----------|
-          | URL2 enzone (5.4k)  | 192 / 257 ms            | **+25%**      | -6%       |
-          | URL4 WRS-2 (28.5k)  | 255 / 320 ms            | **+20%**      | -26%      |
-          | URL5 qfaults (114k) | 2363 / 2574 ms          | **+8%** (was -15%) | **-20%** |
-          | URL6 nat. frs       | 1249 / 3319 ms          | **+62%**      | -30%      |
-          Memory tracked by BenchmarkTools dropped 30–54% across the four
-          URLs vs `main`. The headline reversal is URL5 — a 24pp swing
-          (-15% → +8%) — driven by the `next!` adoption removing
-          per-traversal `LazyNode` allocations on the deep multi-layer
-          walk. `dev/XML.jl + wip` remains the active local baseline; see
-          the "Patching XML.jl from FastKML" item below for the path to
-          delivering these gains without the dev/ override.
-    - **Residual hot sites after round 3 (still structural)**:
-      `Parsers.Result` per parse (~38 MiB), `Vector{Float64}` payload
-      (~13 MiB), final `Vector{SVector{3,Float64}}` (~23 MiB), the
-      `Raw` struct return inside XML.jl's `next_no_xml_space` (~60 MiB,
-      would need making `Raw` mutable — a more invasive upstream
-      change). Further wins would require replacing Parsers.jl with a
-      hand-rolled Float64 scanner in the Coordinates FSM, or a
-      `Raw`-mutating variant upstream.
-- [ ] Evaluate skipping the double materialization
-      (`KMLFile` tree → `PlacemarkTable` → `DataFrame`) by going
-      `LazyKMLFile` → `DataFrame` directly when DataFrames is the
-      consumer.
-- [x] Multi-layer extraction via a single API call. Shipped as
-      `DataFrame(file; layer = :all)` / `PlacemarkTable(file; layer = :all)`,
-      returning a 5-column schema `(layer_idx, layer_name, name, description,
-      geometry)` so duplicate layer names stay distinguishable. Replaces the
-      manual `[DataFrame(file; layer=k) for k in 1:n]; vcat(...; cols=:union)`
-      pattern that benchmark/benchmark_kml_parsers.jl had to spell out.
-
-      **Caveat — this did NOT close the URL5 perf gap.** Median timing on
-      URL5 (qfaults.kml, 114k features) measured at 2452 ms (old N-fold)
-      vs 2522 ms (new `:all`); the difference is well inside the >300 ms
-      run-to-run variance. Memory ~3.5 GiB in both modes. The hypothesis
-      that "8-layer iteration overhead is the dominant slowdown" was
-      overstated — once the upstream XML.jl fixes from PRs #58/#59 are
-      adopted, the redundant `select_layer` enumeration is dwarfed by the
-      deep per-Placemark walk that both modes perform identically. The two
-      extra columns in `:all` mode add ~30 MiB of row-construction overhead
-      that offsets any micro-gain.
-
-      Real leverage for the URL5 gap is in **per-Placemark single-pass
-      extraction** (next item) — that's the ~12× re-tokenization site
-      where ArchGDAL's C++ data sharing wins.
-- [partial] Single-pass per-Placemark extraction. Surfaced by the URL4
-      profile (Apr 2026): each Placemark's subtree is currently walked
-      ~12× the logical token count, because
-      `_collect_placemarks_optimized!`,
-      `extract_placemark_fields_lazy`, `parse_geometry_lazy`, and
-      `extract_text_content_fast` each re-tokenize the same XML
-      bytes. On URL4 this explains 387 MiB of `Raw` allocations in
-      `next_no_xml_space` (~4.8 M calls for 28 k Placemarks). A
-      refactor where one outer walk dispatches by tag/depth and
-      threads field extraction inline would roughly halve traversal
-      cost on wide-and-shallow files.
-
-      **Done on `wip-xml-next-bang-adoption` (commit `5d436c7`,
-      2026-05-08):** added `_peek_text_content(::XML.LazyNode)` in
-      `xml_parsing.jl` — walks `node.raw` directly via `XML.next(::Raw)`
-      instead of routing through `@for_each_immediate_child`, so it
-      doesn't pay the per-call `LazyNode` allocation that the macro
-      otherwise costs on its initial `XML.next(_node)`. Crucially does
-      NOT mutate the input LazyNode (Raw iteration leaves the LazyNode
-      pointer alone), so callers within an outer
-      `@for_each_immediate_child` body can keep iterating siblings
-      without depth-skip surprises (the trap that bites
-      `<name></name>` empty-content tags if we mutated `child` in
-      place). Five lazy-path call sites switched over (`name`,
-      `description`, `<coordinates>` for Point/LineString, `<when>` /
-      `<gx:coord>` for gx:Track, `<coordinates>` for LinearRing).
-      Saved ~5 MiB of tracked allocations (49.5 → 44.2 MiB on URL4)
-      and ~1-2% wall-clock — modest on top of the headline `next!`
-      gain, but real and risk-free.
+FastKML already beats ArchGDAL on all four benchmark URLs (see archive
+below). These are remaining structural optimizations that would
+recover the post-`next!` allocation residual; not urgent.
 
 - [ ] **Piste 1 — Radical single-pass per-Placemark refactor.** The
-      remaining `@for_each_immediate_child` outer-walk allocations
-      after `_peek_text_content` are structural: ~14 MiB at
-      `tables.jl:207` (the outer walk over each Placemark's children
-      in `extract_placemark_fields_lazy`) plus ~5 MiB at
-      `tables.jl:104` (the Polygon walk in `parse_geometry_lazy`),
-      both scaled by the placemark count. Each walk allocates one
-      `LazyNode` upfront via `XML.next(_node)` then uses `next!` for
-      subsequent steps; with N=28 557 placemarks on URL4 that's ~28k
-      allocations of ~500 bytes each = 14 MiB, and the same shape for
-      Polygon. The only way to remove these is to **fuse** the
-      walks: a single deep walk per Placemark that dispatches by
-      `(tag, depth)` and threads field extraction inline (instead of
-      having `parse_geometry_lazy` re-walk Polygon's children, walk
-      them as part of the outer pass and identify boundaries by
-      depth=2 inside a `Polygon` open at depth=1). Substantial
-      refactor — affects `extract_placemark_fields_lazy`,
-      `parse_geometry_lazy`, and `parse_linear_ring_lazy`. Worth ~20
-      MiB of tracked allocs on URL4 (50% of the post-`next!`
-      residual), modest wall-clock gain (~3-5%). Not urgent now that
-      FastKML beats ArchGDAL on all four benchmark URLs.
+      remaining tracked allocations after `_peek_text_content` are
+      structural: ~14 MiB at `tables.jl:207` (outer walk in
+      `extract_placemark_fields_lazy`) + ~5 MiB at `tables.jl:104`
+      (Polygon walk in `parse_geometry_lazy`). Each
+      `@for_each_immediate_child` allocates one `LazyNode` upfront via
+      `XML.next(_node)`, scaled by placemark count (~28k on URL4 →
+      14 MiB). Removing them requires **fusing** the walks: a single
+      deep walk per Placemark dispatching by `(tag, depth)` and
+      threading field extraction inline (instead of having
+      `parse_geometry_lazy` re-walk Polygon's children, walk them as
+      part of the outer pass and identify boundaries by depth=2
+      inside a `Polygon` open at depth=1). Affects
+      `extract_placemark_fields_lazy`, `parse_geometry_lazy`, and
+      `parse_linear_ring_lazy`. Worth ~20 MiB tracked allocs on URL4
+      (50% of post-`next!` residual), modest wall-clock gain (~3-5%).
 
 - [ ] **Piste 2 — Hand-rolled Float64 scanner in the Coordinates
-      FSM.** Top non-walk hot sites after `next!` + `_peek_text_content`:
-      `Coordinates.jl:111` (7.2 MiB) and `Coordinates.jl:130`
-      (4.8 MiB) — together ~12 MiB on URL4. Origin documented in the
-      "Residual hot sites after round 3" note above:
-      `Parsers.Result{Float64}` is allocated per parsed float
-      (~38 MiB cumulative on URL2) and `Vector{Float64}` payload
-      grows during accumulation. To eliminate, replace
+      FSM.** Top non-walk hot sites after `next!` +
+      `_peek_text_content`: `Coordinates.jl:111` (7.2 MiB) and
+      `Coordinates.jl:130` (4.8 MiB) — together ~12 MiB on URL4.
+      Origin: `Parsers.Result{Float64}` allocated per parsed float
+      (~38 MiB cumulative on URL2 per the round-3 analysis), plus
+      `Vector{Float64}` payload growth. Replace
       `Parsers.parse(Float64, view(...))` with a hand-rolled scanner
       embedded directly in the Automa FSM that drives
-      `parse_coordinates_automa`. Avoids the `Parsers.Result`
-      indirection entirely and lets us write floats straight into
-      the pre-`sizehint!`'d `Vector{Float64}` without intermediate
-      tuples. ~12 MiB savings on URL4, more on coordinate-heavy files.
-      Tradeoff: ~50 LOC of float parsing logic to maintain, plus the
-      Automa state machine grows. Recommend deferring until the
-      coordinate path becomes the dominant cost.
+      `parse_coordinates_automa`; write floats straight into the
+      pre-`sizehint!`'d vector without `Parsers.Result` indirection.
+      Trade-off: ~50 LOC of float parsing logic + Automa state
+      machine grows. Defer until coordinate path becomes the dominant
+      cost.
 
-- [ ] **Patching XML.jl from FastKML — alternative to the
-      `dev/XML.jl/` override.** Question raised 2026-05-08: rather
-      than waiting on XML.jl#54 to land before delivering the
-      `wip-xml-next-bang-adoption` gains to registry users, can
-      FastKML inject the equivalent of PRs #58 / #59 at load time?
+- [ ] **Skip double materialization?** The path `KMLFile` tree →
+      `PlacemarkTable` → `DataFrame` is the eager route. Lazy goes
+      `LazyKMLFile` → `PlacemarkTable` → `DataFrame` directly (no
+      materialization overhead). Investigate whether the eager path
+      can also be shortened, or whether this item is now subsumed by
+      the lazy default. Lower priority — verify relevance first.
 
-      **PR #59 (next!/prev! addition) — feasible without type piracy.**
-      Define `FastKML.next!(o::XML.LazyNode)` (and `prev!`) as private
-      helpers in FastKML, dispatching on the foreign `XML.LazyNode`
-      type but living under FastKML's own function name — that's a
-      regular method definition, not piracy. Implementation copies
-      the upstream PR ~12 LOC: read `o.raw`, `XML.next(o.raw)`, skip
-      `RawElementClose`, `setfield!(o, :raw, ...)` to mutate. Uses
-      `XML.LazyNode`'s field structure (`raw`, `tag`, `attributes`,
-      `value`) which is currently public-ish but considered internal
-      — accept the fragility as the cost of bypassing upstream
-      latency. The FastKML macros in `src/macros.jl` then call
-      `FastKML.next!` instead of `XML.next!`. Drop the
-      `dev/XML.jl/` requirement entirely; FastKML works against the
-      registry XML.jl. Estimated 30 LOC change in FastKML, no
-      behavioural risk if XML.jl 0.4 later ships its own `next!` (we
-      keep using ours; the namespaces don't collide).
+### Real-world fixture coverage
 
-      **PR #58 (`next_no_xml_space` ctx-share, ~6 LOC) — harder.**
-      The patch is INSIDE an existing XML.jl method, so delivering it
-      from FastKML means either (a) `@eval`-ing a redefinition of
-      `XML.next_no_xml_space` at `__init__` (full type piracy +
-      method-redefinition warnings + invalidations), or (b)
-      vendoring the entire `next_xml_space`/`next_no_xml_space`
-      chain (~30 LOC) as private FastKML helpers and routing our
-      `next!` through them. Option (b) is the cleanest but doubles
-      the maintenance surface. Worth ~60 MiB on URL2 per the round-3
-      analysis, but URL2 is already 25% faster than ArchGDAL —
-      diminishing returns. Recommend skipping #58 entirely from
-      FastKML's side; just ship #59's gains via the private-helper
-      route.
+- [ ] **Exhaustive Google KML samples corpus.** Walk the reference
+      index (https://developers.google.com/kml/documentation/kmlreference),
+      extract every embedded KML snippet, save each as a fixture
+      under `test/fixtures/google_kml_reference/<element>.kml`, add a
+      parametric testset asserting each round-trips through eager +
+      lazy paths without warnings or errors. Cross-cuts with the
+      audit script: any snippet that produces an "Unhandled Tag"
+      warning becomes a candidate to model.
 
-      **Decision deferred** — the dev/XML.jl override is fine while
-      we're in active development. Revisit when (i) we want to
-      register FastKML.jl, OR (ii) XML.jl#54 stalls beyond a few
-      months. Whichever comes first.
+### Test coverage — long tail (low ROI / deferred)
 
-## Test coverage
+Current global coverage **~55%** (see archive for full breakdown).
+Remaining low-priority modules:
 
-Current global coverage: **54.53%** (was 22.49% at session start —
-+32.04 points). Six target modules went from 0% (or near-zero) to
-74-100%, plus two real bugs were caught and fixed along the way.
-
-Done in this session:
-- [x] `src/Layers.jl` — `get_num_layers`, `get_layer_names`,
-      `get_layer_info`, `select_layer` (by index, by name, error
-      branches), `list_layers` smoke test, both eager + lazy paths,
-      single-layer (example.kml) + multi-layer (synthetic) fixtures.
-      Covered: 0% → 63.8%.
-- [x] `src/tables.jl` — `PlacemarkTable` construction from each input
-      type, `Tables.istable / rowaccess / schema / rows`, all four
-      `parse_geometry_lazy` branches (Point / LineString / Polygon /
-      MultiGeometry), `simplify_single_parts` toggle. Covered: 0% →
-      79.6%.
-- [x] `src/utils.jl` — 10 exported helpers: `find_placemarks` (filters),
-      `count_features`, `get_bounds` (Point / Polygon / LineString /
-      container), `extract_path`, `extract_styles`, `get_metadata`,
-      `haversine_distance` (NYC↔LA known distance), `path_length`,
-      `unwrap_single_part_multigeometry` (all branches),
-      `merge_kml_files`. Covered: 1.9% → 80.6%.
-- [x] `ext/FastKMLDataFramesExt.jl` — both method overloads
-      (`DataFrame(path; lazy)` with `lazy=true` and `lazy=false`,
-      `DataFrame(KMLFile)`, `DataFrame(LazyKMLFile)`), `layer` and
-      `simplify_single_parts` keyword forwarding. Covered: 0% → 100%.
-- [x] `ext/FastKMLZipArchivesExt.jl` — KMZ round-trip with `doc.kml`
-      at root (standard) and `data/inner.kml` (fallback branch),
-      both eager (KMLFile) and lazy (LazyKMLFile) reads, end-to-end
-      DataFrame on a `.kmz` path. Covered: 0% → 77.5%.
-- [x] `src/time_parsing.jl` — `parse_iso8601` across date /
-      datetime / datetime-with-TZ / week date / ordinal date forms
-      (extended + basic), invalid-string fallback (with and without
-      `warn=false`), `is_valid_iso8601`, plus an integration KML with
-      `<TimeStamp>` and `<TimeSpan>`. Covered: 0% → 74.3%. **Caught
-      a real bug**: `parse_week_date` shadowed `Dates.dayofweek` with
-      a local variable, breaking every week-date input; fixed in the
-      same commit by renaming the local to `wday`.
-- [x] `src/validation.jl` — `validate_coordinates` (scalar + vector),
-      `validate_geometry` for each geometry type (Point, LineString,
-      LinearRing-with-unclosed-branch, Polygon, MultiGeometry),
-      `validate_document_structure` for Document and Folder
-      (including empty-features and nested-Document branches).
-      Covered: 0% → 74.8%. **Caught a curry-direction trap**:
-      `occursin(needle)` is `Base.Fix2(occursin, needle)`, the
-      *opposite* of what one would intuit; `contains(needle)` is
-      the right choice for `any(.., issues)` patterns. Documented
-      inline.
-
-Still to do (low ROI / deferred):
-- [ ] `src/html_entities.jl` — currently 39.3% (the
-      `decode_named_entities` body is fully covered). The remaining
-      60% is the `_load_entities` cache-build path which runs once
-      per session and isn't exercised because the cache is populated.
-      Best left alone unless we want to add a test that wipes the
-      Scratch cache and forces a network rebuild.
-- [ ] `ext/FastKMLMakieExt.jl` (61 LOC) — heavy Makie dep tree
-      (~60+ transitive packages). Skip in CI; if needed, add a
-      minimal `Plots`/`Makie`-free smoke test that just verifies
-      method dispatch resolves once Makie is loaded.
-- [ ] `src/FastKML.jl` (45 LOC, currently 37.8%) and
-      `src/navigation.jl` (127 LOC, 1.6%) — leftover paths in the
-      module entry-point and the navigation helpers; lower priority
-      since they're internal plumbing.
-- [ ] `src/field_conversion.jl` (188 LOC, 43.1%) — already partially
+- [ ] `src/html_entities.jl` (39%) — `_load_entities` cache-build path
+      runs once per session and isn't exercised because the cache is
+      populated. Best left alone unless we add a test that wipes the
+      Scratch cache.
+- [ ] `ext/FastKMLMakieExt.jl` (61 LOC) — heavy Makie dep tree (60+
+      transitive packages). Skip in CI; if needed, a minimal
+      Makie-free smoke test verifying method dispatch.
+- [ ] `src/FastKML.jl` (45 LOC, 38%) and `src/navigation.jl` (127 LOC,
+      1.6%) — module entry-point and navigation helpers; lower
+      priority since they're internal plumbing.
+- [ ] `src/field_conversion.jl` (188 LOC, 43%) — already partially
       covered transitively. Could be pushed higher with KML fixtures
       exercising more attribute conversions, but it's a long tail of
       small branches.
 
-Done — extracted from the benchmark:
-- [x] **ArchGDAL parity integration tests.** The four correctness
-      checks from `benchmark/benchmark_kml_parsers.jl` (row count, name
-      after strip + entity decode, description after `\s+→` collapse,
-      geometry WKT, geometry coordinates) are now `@test` assertions
-      in `test/integration_archgdal_test.jl`, gated behind
-      `FASTKML_INTEGRATION=true`. Run via:
-      ```sh
-      FASTKML_INTEGRATION=true julia --project=. -e 'using Pkg; Pkg.test()'
-      ```
-      Pulls URL2 (enzone2022.kmz, 5 411 rows), URL4
-      (WRS-2_bound_world_0.kml, 28 557 rows), and URL5
-      (qfaults.kmz, 114 037 rows) into a Scratch cache
-      (`FastKMLIntegrationCache`) — three URLs that match end-to-end
-      against ArchGDAL after the symmetric normalizations. Adds
-      `ArchGDAL`, `WellKnownGeometry`, `URIs`, `Scratch`, `Downloads`
-      to `test/Project.toml` (resolved during `Pkg.test()` only).
+### Code quality
 
-Real-world fixture coverage (planned):
-- [ ] **Exhaustively include the KML examples from
-      https://developers.google.com/kml.** `benchmark/example.jl` was
-      built from a few of those examples (the KML_Samples.kml master
-      file and the per-element snippets). The reference site is the
-      canonical illustration of every element in OGC 2.2 + Google
-      extensions, so its example corpus is the natural ground truth
-      for FastKML's parsing surface. Plan: walk the reference index
-      (https://developers.google.com/kml/documentation/kmlreference),
-      extract every embedded KML snippet, save each as a fixture
-      under `test/fixtures/google_kml_reference/<element>.kml`, and
-      add a parametric testset that asserts each one round-trips
-      through eager + lazy paths without warnings or errors. This
-      cross-cuts with the OGC completeness audit's Phase 5 (drive
-      remaining gaps from real-world fixtures): any snippet that
-      produces an "Unhandled Tag" warning becomes a candidate to
-      model.
+- [partial] **JET dead-code sweep — 11 reports deferred to triage.**
+      One typo fixed (`Base.eltype(::EagerLazyPlacemarkIterator)`,
+      commit `e1dab7a`). Remaining ~11 non-noise reports specific to
+      FastKML:
+      - 2× `FieldError` on `.value` access (Array / OrderedDict
+        types) — likely in `field_conversion.jl` or attribute paths.
+      - 6× `iterate(::Nothing)` / `length(::Nothing)` on
+        `src/Layers.jl` paths — probably false positives where JET
+        can't propagate an earlier `nothing`-guard to the iteration
+        site; restructure or `@assert` may suffice.
+      - 2× `convert(Bool, Tuple{})` inside `_iter_feat`
+        (`src/tables.jl:204-214`) — empty-tuple `else` branch
+        interacting with `&&`/`||` chains under broadcasting.
+      - 1× `BoundsError` on `Tuple{Float64, Float64}[3]` — 2-tuple
+        indexed at position 3; suspect Coord2/Coord3 confusion in a
+        coordinate-access site.
 
-## Code cleanup
+      None caught by the current test suite (happy-path coverage).
+      Each is either a guarded branch JET can't see through (false
+      positive — annotate or restructure) or a latent bug like the
+      typo above (real, dormant).
 
-- [partial] **Dead-code sweep — JET.jl run on 2026-04-30.** Origin:
-      adding the Validation testset surfaced that
-      `validate_geometry(::Polygon)`'s `outerBoundaryIs === nothing`
-      check was provably unreachable (the field is typed `LinearRing`,
-      no `Nothing` in the union); removed in that commit. That one
-      hit motivated a wider sweep. Per discussion this session we
-      went straight to JET rather than the type-driven grep first.
-
-      Procedure to rerun (self-contained temp env, no infra changes):
+      Procedure to rerun:
       ```sh
       julia -e '
         using Pkg
@@ -435,182 +119,257 @@ Real-world fixture coverage (planned):
         report_package(FastKML)
       '
       ```
-      (To keep JET available for repeated runs without re-installing,
-      add `JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"` to
-      `test/Project.toml` `[deps]`; not done now since the next sweep
-      is deferred.)
 
-      Result: 185 raw reports → ~115 union-split MethodError noise
-      discarded (Julia stdlib idioms on tiny Union slices) → 70
-      non-union-split reports → ~12 specific to FastKML.jl (rest in
-      dependencies: XML.jl, Dates, TimeZones, Downloads; out of scope
-      for this package).
+### Benchmark — diverging-file diagnostics
 
-      **Fixed (1):**
-      - `src/tables.jl:62` — `Base.eltype(::Type{EagerLazyPlacemarkIterator})
-        = eltype(iter.placemarks)` referenced an undefined `iter`
-        (copy-paste typo from the line-60 instance overload).
-        JET label: `UndefVarError: FastKML.TablesBridge.iter`.
-        Unreachable in practice (Tables.jl materializes via the
-        externally declared `Tables.Schema`, not the iterator's
-        eltype) but any direct `eltype(it)` would crash. Fixed via
-        `fieldtype(EagerLazyPlacemarkIterator, :placemarks)` so the
-        element type stays bound to the struct definition.
+- [ ] After URL3/URL6, sweep across the improved diagnostics
+      (`diff @ char N`, WKT `.val`) on any other diverging (non-iso)
+      file we come across and decide row-by-row which interpretation
+      is correct against the raw XML. Most current divergences are
+      now resolved; this is a "keep eyes open" item rather than
+      active work.
 
-      **Deferred — to triage in a future session (~11 reports):**
-      - 2× `FieldError` on `.value` access (Array / OrderedDict
-        types) — likely in `field_conversion.jl` or attribute paths.
-      - 6× `iterate(::Nothing)` / `length(::Nothing)` on
-        `src/Layers.jl` paths — probably false positives where JET
-        can't propagate an earlier `nothing`-guard to the iteration
-        site; restructure or `@assert` may suffice.
-      - 2× `convert(Bool, Tuple{})` inside `_iter_feat`
-        (`src/tables.jl:204-214`) — the empty-tuple `else` branch
-        interacting with `&&`/`||` chains under broadcasting.
-      - 1× `BoundsError` on `Tuple{Float64, Float64}[3]` — a 2-tuple
-        indexed at position 3; suspect Coord2/Coord3 confusion in a
-        coordinate-access site.
+---
 
-      None are caught by the existing test suite (54.5% coverage
-      exercises happy paths only). Each is either a guarded branch
-      JET can't see through (false positive — annotate or
-      restructure) or a latent bug like the typo above (real,
-      dormant). Per-report triage cost is non-trivial; bundling for
-      a focused future pass.
+## Deferred decisions
 
-      **Other techniques still available** (original three-pronged plan):
-      1. Type-driven grep for `field === nothing` where
-         `fieldtype(T, :field)` excludes `Nothing` — JET subsumes
-         most of this; useful only if a future contributor adds a
-         dependency JET can't analyze.
-      2. ✅ JET.jl — done this session.
-      3. Coverage-driven: lines that stay 0% after the representative
-         test suite are either untested *or* unreachable; cross-ref
-         with (1)/(2) to discriminate. Lower priority now that
-         coverage is at 54.5%.
+### Patching XML.jl from FastKML — alternative to the `dev/XML.jl/` override
 
-- [x] Pruned `benchmark/cross_branch_benchmark.jl` and renamed to
-      `scaling_benchmark.jl`: dropped `detect_features`,
-      `extract_placemarks_manual`, the branch-vs-branch framing, the
-      DataFrames/Tables/JSON `try ... catch` cascade, and the JSON
-      results dump. Now ~110 lines (was 407): synthetic Point-only KML
-      generator + read benchmark + DataFrame benchmark + console
-      summary table.
-- [x] Deleted `benchmark/run_benchmarks.bat` (Windows-only,
-      hardcoded `..\dev\KML` + `parsing_perf_enhancement` branch —
-      no longer makes sense without the cross-branch flow).
-- [x] `benchmark/benchmark_results_*.json` gitignore item is moot —
-      the JSON dump was removed from the script in the prune above,
-      so no such files are generated anymore.
+Instead of waiting on
+[`XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54) (the
+upstream renovation that put PRs #58 and #59 on hold), FastKML could
+ship the perf gains via private helpers.
 
-## OGC 2.2 + Google extensions — completeness audit (planned 2026-05-03)
+- **PR #59 (`next!`/`prev!`) — feasible without type piracy.**
+  Define `FastKML.next!(o::XML.LazyNode)` (and `prev!`) as private
+  helpers in FastKML, dispatching on the foreign `XML.LazyNode` type
+  but living under FastKML's own function name (regular method
+  definition, not piracy). ~30 LOC. Uses XML.LazyNode's internal
+  field structure (`raw`, `tag`, `attributes`, `value`) — accept the
+  fragility as the cost of bypassing upstream latency. The macros in
+  `src/macros.jl` would call `FastKML.next!` instead of `XML.next!`;
+  drops the `dev/XML.jl/` requirement entirely.
 
-Surfaced while running `benchmark/example.jl` on 2026-05-03: the eager
-parser `read(file, KMLFile)` crashes on the USGS earthquake feed
-(`2.5_month_depth_animated.kml`) because `<NetworkLinkControl>` is a
-top-level KML 2.2 element FastKML doesn't model. The macro `object()`
-(`src/xml_parsing.jl:193-194`) returns `nothing` for unknown tags after
-emitting the "Unhandled Tag" warning; `parse_kmlfile`
-(`src/xml_parsing.jl:65-70`) then `push!`es that `nothing` into a
-`Vector{Union{XML.AbstractXMLNode,KMLElement}}` → `MethodError`.
+- **PR #58 (ctx-share inside `next_no_xml_space`) — harder.** The
+  patch is INSIDE an existing XML.jl method, so delivery means either
+  (a) `@eval`-ing a redefinition (full type piracy + redefinition
+  warnings + invalidations), or (b) vendoring the entire
+  `next_xml_space`/`next_no_xml_space` chain (~30 LOC) as private
+  FastKML helpers. Option (b) is cleanest but doubles the maintenance
+  surface. Worth ~60 MiB on URL2 per round-3 analysis, but URL2 is
+  already 25% faster than ArchGDAL — diminishing returns. Recommend
+  skipping.
 
-The lazy / `PlacemarkTable` path is unaffected (it doesn't go through
-`parse_kmlfile`), so `example.jl` works because it uses
-`DataFrame(file; layer=…)` and `read(file, LazyKMLFile)` everywhere.
+**Trigger to act:**
+1. **Either** we want to register FastKML.jl on the General registry
+   (the `dev/XML.jl/` override blocks that), **or**
+2. XML.jl#54 stalls beyond a few months without resolution.
 
-### Plan in 5 phases
+Until one fires, the `dev/XML.jl/` + `wip-xml-next-bang-adoption`
+override stays — it's cleaner than introducing fragile coupling to
+XML.jl internals. Recorded in
+[`memory:project_fastkml.md`](https://github.com/anthropics/claude-code/issues/0).
 
-- [x] **Phase 1 — Fallthrough hardening (option A, with warning kept).**
-  `parse_kmlfile` (`src/xml_parsing.jl:64-77`) now keeps only `KMLElement`
-  results from `object()` — `nothing`, strings, enums, and any other
-  return type are filtered. The "Unhandled Tag" warning in `_object_slow`
-  still fires. Regression test: "Unmodeled top-level tags are skipped,
-  not fatal" in `test/runtests.jl` (4 assertions). USGS earthquake feed
-  no longer crashes in eager mode.
+### Fallthrough strategy — Option A vs Option B
 
-- [x] **Phase 2 — Static audit script.** `tools/audit_kml_coverage.jl`
-  downloads both XSDs (cached under `tools/.xsd_cache/`, gitignored),
-  walks every `<xs:element>` and `<xs:complexType>` declaration,
-  classifies type kinds (`true_complex` / `simple_content` / `simple`),
-  and diffs against `TAG_TO_TYPE` after `using FastKML`. Outputs a
-  markdown report (stdout or `tools/coverage_report.md`).
+Option A (filter `nothing` returns from `object()`, keep the warning)
+shipped in Phase 1 of the OGC sweep. Option B (introduce an
+`UnknownKMLElement{tag}` type that preserves the raw XML subtree for
+user-side extraction) is **not** taken; revisit only if real-world
+fixtures surface tags users want to inspect without us modeling them.
 
-  **State as of 2026-05-07** (post Phase 3):
-  - OGC: 58 complex candidates → 55 modeled, 3 missing
-    (`Metadata`, `outerBoundaryIs`, `innerBoundaryIs`).
-    The two boundary tags are intentional (Polygon handles them via
-    `handle_polygon_boundary!`); only `Metadata` is a real gap (deprecated
-    in KML 2.2 in favour of `<ExtendedData>`, but still in the schema).
-  - Google ext.: 2/2 complex candidates modeled (full coverage).
+### Audit script CI wiring
 
-  **Wiring decision:** chose **(ii) one-shot tool**. Run with
-  `julia --project=. tools/audit_kml_coverage.jl [out.md] [--refresh]`.
-  Not part of CI — keeps the test suite hermetic (no network) and
-  avoids fail-on-regression friction during in-progress refactors.
+`tools/audit_kml_coverage.jl` chose **(ii) one-shot tool, run manually**.
+Re-evaluate to (i) "fail CI on regression" or (iii) "informational CI
+warning" if drift between XSD and `TAG_TO_TYPE` becomes a recurring
+problem.
 
-- [x] **Phase 3 — `<NetworkLinkControl>` modeling (level A).** Struct
-  added in `src/types.jl` with all 10 OGC fields. `linkSnippet` aliased
-  to `Snippet` via `TAG_TO_TYPE[:linkSnippet] = Snippet`. Auto-populated
-  into the registry via `all_concrete_subtypes(KMLElement)`. Positive
-  test "NetworkLinkControl modeling" in `test/runtests.jl` (22 assertions
-  covering all fields, the linkSnippet alias, and the AbstractView
-  dispatch onto `LookAt`). USGS feed now reads cleanly in eager mode
-  (`minRefreshPeriod=60.0` extracted).
+### Release readiness — version bump 0.1.0 → 0.2.0?
 
-- [x] **Phase 4 — `<gx:TimeStamp>` / `<gx:TimeSpan>` in `<LookAt>` /
-  `<Camera>`.** Defined `gx_TimeStamp` and `gx_TimeSpan` as
-  `TimePrimitive` subtypes (mirroring the OGC `TimeStamp`/`TimeSpan`
-  structs). **Crucially, no field added to Camera/LookAt** — those
-  already declare `@option TimePrimitive ::TimePrimitive`, and the
-  abstract-type dispatch in `assign_complex_object!` (pass 1) routes
-  `gx_TimeStamp` / `gx_TimeSpan` there automatically. Map_field_name
-  extended to handle gx_TimeSpan's `begin`/`end` keyword remap.
-  Phase-4-specific testset (11 assertions) plus +8 from auto-expanded
-  Empty Constructors. The existing gx:Track parsing testset no longer
-  emits the "Unhandled Tag: gx:TimeSpan" warning. Audit also surfaced
-  two script bugs (false positive on bare-name match across schemas;
-  false negative on `gx:`-prefixed type references) — fixed in
-  `tools/audit_kml_coverage.jl`.
+Substantial unreleased work documented in `CHANGELOG.md`. Bump and
+tag when the pre-conditions hold:
 
-- [x] **Phase 5 — Drive remaining gaps from the audit report.**
-  Both audit-surfaced gaps closed:
-  - **OGC `<Metadata>`** modeled as a `Feature` child with an opaque
-    `children::Vector{XML.AbstractXMLNode}` field. Special-cased in
-    `object()` so the subtree is preserved verbatim instead of being
-    re-routed through `add_element!` (which would emit "Unhandled tag"
-    warnings for the legacy `<any processContents="lax">` content).
-  - **Google `<gx:ViewerOptions>` + `<gx:option>`** modeled as
-    `Object`-derived structs. `gx_option` carries the `name` and
-    `enabled` attributes alongside the inherited `id`/`targetId`.
-    `gx_ViewerOptions` collects them into `gx_options::Vector{gx_option}`.
-    Added as `@option gx_ViewerOptions` field on `Camera` and `LookAt`
-    (per Google's "contained by Camera, LookAt").
+- [ ] Patching XML.jl from FastKML decided (above) — required if we
+      want `Pkg.add("FastKML")` to work without dev/ override.
+- [ ] CHANGELOG.md current and reviewed.
+- [ ] One last run of the full benchmark suite + integration tests
+      against the version that will be tagged.
+- [ ] Decide on registry submission (General registry, dedicated
+      registry, or stay url-based).
 
-  Tests: +6 (Metadata) + +13 (gx_ViewerOptions / gx_option) + +12
-  Empty Constructors auto-coverage. Final audit state (after all 5
-  phases): **OGC 56/58** (only `<outerBoundaryIs>` and `<innerBoundaryIs>`
-  remain, both intentional — handled via `Polygon`'s `handle_polygon_boundary!`
-  and stored as `LinearRing` / `Vector{LinearRing}` fields directly);
-  **Google 15/15 complete**. The 5-phase OGC completeness sweep is
-  closed.
+---
 
-### Decisions deferred from the design conversation
+## Insights worth remembering
 
-1. **Fallthrough strategy — option A vs option B.** Option A selected
-   for Phase 1 and shipped. Option B (introduce an
-   `UnknownKMLElement{tag}` preserving the raw XML subtree) is **not**
-   taken; revisit only if Phase 5 surfaces tags users want to inspect
-   without us modeling them.
+These are non-obvious lessons surfaced during development. Worth
+keeping handy for similar future situations.
 
-2. **Audit script wiring (i/ii/iii)** — chose **(ii)** when Phase 2
-   shipped. Re-evaluate if drift between XSD and `TAG_TO_TYPE` becomes
-   a recurring problem.
+### Auto-populate mechanism for tag registration
 
-### Insight worth remembering
+`_populate_tag_to_type` in `src/types.jl:669-703` auto-registers every
+concrete subtype of `KMLElement` by name. Adding a new modeled tag
+costs essentially:
 
-The auto-populate mechanism in `_populate_tag_to_type` (`types.jl:669-703`)
-makes adding a new modeled tag almost free: define the struct, the
-registry picks it up by name. Manual aliases are only needed for tags
-whose XML name doesn't match a struct name (e.g. `<Url>` → `Link`,
-`<atom:author>` → `AtomAuthor`). So the cost of "modeling N more tags"
-scales linearly with N, with no architectural lift.
+1. Define a `Base.@kwdef mutable struct NewTag <: …` somewhere.
+2. The registry picks it up by name automatically.
+3. Manual aliases (in the same function) only needed when XML name
+   doesn't match struct name (e.g. `<Url>` → `Link`,
+   `<atom:author>` → `AtomAuthor`, `<linkSnippet>` → `Snippet`).
+
+So "modeling N more tags" scales linearly with N, no architectural
+lift. Phase 5 of the OGC sweep added 3 types (`Metadata`,
+`gx_ViewerOptions`, `gx_option`) in ~30 LOC of types.jl + 1 alias.
+
+### Abstract-type field as dispatch
+
+When a struct declares an abstract-type field (e.g.
+`Camera.TimePrimitive ::TimePrimitive`), `assign_complex_object!`
+pass 1 routes any subtype there via `child_type <: non_nothing_type`.
+Phase 4 of the OGC sweep added `gx_TimeStamp` and `gx_TimeSpan` as
+`TimePrimitive` subtypes and **didn't need to touch Camera/LookAt** —
+the dispatch picked them up automatically. Future-proof for any
+other-namespace TimePrimitive (e.g. an `xal:` extension) that wants
+to ride the same field.
+
+### Profile-driven decisions: hypotheses age fast
+
+The "multi-layer iteration overhead is dominant" hypothesis (perf #2,
+ca. April 2026) was overstated by the time we tried to act on it: the
+upstream XML.jl fixes (PRs #58/#59, `next!` adoption) had already
+displaced the bottleneck to per-Placemark walk depth. The `:all`
+optimization shipped as an API improvement but didn't move the perf
+needle as expected.
+
+Lesson: **re-profile before optimizing**. A profile from 2-3 weeks
+ago is suspect; one from 2-3 months ago is almost certainly stale.
+Cost of profiling (~5 min with `@benchmark` + `Profile`) is trivial
+relative to optimizing the wrong site.
+
+### Outillage avant action
+
+The XSD audit script (`tools/audit_kml_coverage.jl`) — written as
+Phase 2, MIDWAY through the OGC sweep, not at the end — turned the
+remaining phases from "guided by bugs" into "guided by spec". Without
+it, Phase 5 (Metadata, gx:ViewerOptions) would likely never have
+happened: those tags weren't hitting in any real-world fixture we
+were testing. The audit revealed them as gaps. Cost of writing the
+script (~30 min) was repaid in the same session by surfacing two
+gaps that would have shipped as silent missing coverage.
+
+### Aliasing contract in `next!` adoption
+
+Switching `@for_each_immediate_child` from `XML.next` (allocates a
+fresh `LazyNode` per step) to `XML.next!` (mutates one LazyNode
+in place) gave a ~50% memory reduction on URL4. The trade-off: bodies
+that **store** `child` into a longer-lived collection must explicitly
+snapshot via `XML.LazyNode(child.raw)`, otherwise every stored
+reference silently tracks the last iteration's position. Three
+callsites in `Layers.jl` needed this fix. Document the contract on
+the macro itself (done in `src/macros.jl`'s docstring).
+
+---
+
+## Done — milestones (archive)
+
+### OGC 2.2 + Google `gx:` completeness sweep — closed 2026-05-08
+
+5-phase sweep brought concrete-element coverage to **56/58 OGC** + 
+**15/15 Google `gx:`**. The 2 missing OGC are `<outerBoundaryIs>` and
+`<innerBoundaryIs>`, intentionally handled via `Polygon`'s special
+parsing path.
+
+- Phase 1: fallthrough hardening in `parse_kmlfile` (filter
+  non-`KMLElement` returns from `object()`, the "Unhandled Tag"
+  warning still fires).
+- Phase 2: `tools/audit_kml_coverage.jl` XSD-based audit.
+- Phase 3: `<NetworkLinkControl>` modeled.
+- Phase 4: `gx_TimeStamp` / `gx_TimeSpan` on `<Camera>` / `<LookAt>`.
+- Phase 5: `<Metadata>` (opaque preservation) +
+  `<gx:ViewerOptions>` / `<gx:option>`.
+
+See `CHANGELOG.md` ([Unreleased], "Added — KML element coverage")
+for the per-element details.
+
+### Performance milestone — FastKML beats ArchGDAL on 4/4 URLs (2026-05-08)
+
+| URL | Time vs ArchGDAL | Memory vs `main` |
+|---|---|---|
+| URL2 enzone | +25% faster | -31% |
+| URL4 WRS-2 | +20% faster | -53% |
+| URL5 qfaults | +8% faster (was -15%) | -48% |
+| URL6 national_frs | +62% faster | -54% |
+
+Drivers (on `wip-xml-next-bang-adoption` + `dev/XML.jl/dev-combined`):
+`XML.next!` adoption + `_peek_text_content` raw-level text extraction.
+Headline: URL5 24pp swing (-15% → +8%). See `CHANGELOG.md`
+([Unreleased], "Performance") for the full breakdown.
+
+### Test coverage round — 22% → ~55% (2026-04 to 2026-05)
+
+7 modules went from 0% / near-zero to 74-100%:
+Layers, tables, utils, validation, time_parsing,
+FastKMLDataFramesExt, FastKMLZipArchivesExt. Plus modeled-type
+testsets covering all newly modeled OGC + `gx:` elements.
+
+Two real bugs caught and fixed:
+- `parse_week_date` shadowed `Dates.dayofweek` (broke ISO 8601 week-date inputs).
+- `Base.eltype(::EagerLazyPlacemarkIterator)` referenced undefined `iter` (JET-found typo).
+
+ArchGDAL parity integration tests extracted from the benchmark, gated
+by `FASTKML_INTEGRATION=true`; run via
+`FASTKML_INTEGRATION=true julia --project=. -e 'using Pkg; Pkg.test()'`.
+
+### Benchmark URL investigations — all 4 closed
+
+- **URL1 (`USEDO.kmz`)**: non-conformant comma-only-delimited
+  coordinates from KMLer. FastKML lenient by design (recovers
+  geometry); ArchGDAL strict (reduces ring to single point). Not a
+  bug. Tested in `test/runtests.jl`, documented in
+  `docs/src/coordinate_parsing.md`.
+- **URL3 (`Aglim1.kmz`)**: same root cause as URL1.
+- **URL4 (`WRS-2_bound_world_0.kml`)**: originally 14% slower than
+  ArchGDAL; `next!` adoption + `_peek_text_content` flipped to 20%
+  faster.
+- **URL6 (`national_frs.kmz`)**: three findings —
+  (i) `decode_named_entities` byte-slice bug fixed (`889a275`);
+  (ii) layer-semantics divergence reconciled (concat all ArchGDAL
+  leaf-folder layers; FastKML exposes 3 top-level layers, ArchGDAL
+  flattens to 19 122 leaf folders);
+  (iii) name normalization made symmetric (`strip + decode_named_entities`
+  on both sides).
+  Residual: row 48072 has malformed `<coordinates>,,0</coordinates>` —
+  FastKML returns `Float64[]`, ArchGDAL substitutes `(0,0,0)`.
+  Documented as accepted divergence.
+
+### Memory allocation profile rounds
+
+- **Round 1 (commit `4d9408e`)**: tracked allocations 240 → 123 MiB
+  (-49%) on URL2 via `extract_text_content_fast` 0/1-fragment
+  fast-path + `parse_coordinates_automa` heuristic `sizehint!`.
+- **Round 2**: tested `Parsers.xparse` + `XML.LazyNode[]` array
+  typing; neither moved the needle. `SubArray` was elided; the
+  `@for_each_immediate_child` allocation was structural to
+  `XML.next` (fixed in Round 3).
+- **Round 3 (upstream)**: prepared two PRs against
+  `mathieu17g/XML.jl` —
+  [#58](https://github.com/JuliaComputing/XML.jl/pull/58) ctx-share
+  (~6 LOC, ~60 MiB savings) and
+  [#59](https://github.com/JuliaComputing/XML.jl/pull/59) `next!` /
+  `prev!` (~54 LOC). Status 2026-04-30: joshday pointed at
+  [XML.jl#54](https://github.com/JuliaComputing/XML.jl/pull/54), a
+  major renovation; both held pending. Local working baseline:
+  `dev/XML.jl/` checkout on `dev-combined` + the FastKML adaptation
+  on `wip-xml-next-bang-adoption`. The
+  `[sources] XML = …` override in `benchmark/Project.toml` and the
+  `dev/` entry in `.gitignore` stay in place.
+
+### Code cleanup
+
+- JET dead-code sweep on 2026-04-30: 185 raw reports → 70 non-noise
+  → ~12 specific to FastKML → 1 fixed (the
+  `EagerLazyPlacemarkIterator` typo), 11 deferred (still in active
+  list above).
+- Benchmark scripts pruned: `cross_branch_benchmark.jl` →
+  `scaling_benchmark.jl` (407 → 110 lines), `run_benchmarks.bat`
+  deleted, JSON results dump removed.
