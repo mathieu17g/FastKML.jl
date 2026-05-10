@@ -70,7 +70,28 @@ au 2026-05-10) :
 3 macros, adaptation tables.jl + xml_parsing.jl + Layers.jl, tests,
 profile/benchmark v0.4).
 
-#### État courant de la migration (RESUME HERE)
+#### Migration TERMINÉE — 577/577 tests verts (commit `f0d1944`, 2026-05-10)
+
+Toute la migration v0.4 est appliquée. Tests à parité avec `main`.
+
+Commits :
+- `3c6bdd8` — setup branche + dev/XML.jl-v0.4 clone
+- `43ef622` — parsing path migré (eager + lazy + DataFrame OK)
+- `55f6049` — RESUME HERE checkpoint pour résilience contexte
+- `f0d1944` — serialization migrée + signature widening (final)
+
+`wip-xml-v0.4` est prêt à shipper les gains perf v0.4 (~70%
+parse speedup à la source) le jour où PR #54 land sur General
+registry. Steps de transition à ce moment-là :
+1. Drop `[sources]` de `Project.toml` (et de `test/Project.toml`
+   si présent).
+2. Garder `[compat] XML = "0.4"`.
+3. `Pkg.resolve()` côté FastKML — XML résolu depuis registry.
+4. Supprimer le clone `dev/XML.jl-v0.4/` (plus utile).
+5. Merger `wip-xml-v0.4` dans `main`.
+6. Tag a v0.2.0 release (substantial v0.3 → v0.4 dependency change).
+
+#### État courant de la migration (RESUME HERE — historique)
 
 **Au 2026-05-10, commit `43ef622`** : la migration s'est révélée
 beaucoup moins coûteuse que prévu (~45 min réels au lieu de jours).
