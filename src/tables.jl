@@ -6,7 +6,7 @@ import Tables
 import ..Layers: get_layer_info, select_layer
 import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, Geometry,
                 LinearRing, Point, LineString, Polygon, MultiGeometry, Coord2, Coord3,
-                gx_Track
+                gx_Track, XMLAnyNode
 import ..XMLParsing: object, extract_text_content_fast
 import ..Macros: @find_immediate_child, @for_each_immediate_child
 import ..HtmlEntities: decode_named_entities
@@ -27,7 +27,7 @@ const KML = parentmodule(@__MODULE__)
 struct EagerLazyPlacemarkIterator
     placemarks::Vector{NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}}
 
-    function EagerLazyPlacemarkIterator(root_node::XML.AbstractXMLNode)
+    function EagerLazyPlacemarkIterator(root_node::XMLAnyNode)
         placemarks = Vector{NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}}()
         sizehint!(placemarks, 1000)  # Pre-allocate for typical layer size
 
@@ -41,7 +41,7 @@ struct EagerLazyPlacemarkIterator
 end
 
 # Optimized collection with minimal allocations
-function _collect_placemarks_optimized!(placemarks::Vector, node::XML.AbstractXMLNode)
+function _collect_placemarks_optimized!(placemarks::Vector, node::XMLAnyNode)
     @for_each_immediate_child node child begin
         XML.nodetype(child) === XML.Element || continue
         
@@ -67,7 +67,7 @@ Base.eltype(::Type{EagerLazyPlacemarkIterator}) = eltype(fieldtype(EagerLazyPlac
 #─────────────────────────────────────────────────────────────────────────────────────#
 
 # Minimal geometry parsing - only what's needed for DataFrame
-function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
+function parse_geometry_lazy(geom_node::XMLAnyNode)
     geom_tag = tag(geom_node)
 
     if geom_tag == "Point"
@@ -179,7 +179,7 @@ function parse_geometry_lazy(geom_node::XML.AbstractXMLNode)
     return missing
 end
 
-function parse_linear_ring_lazy(ring_node::XML.AbstractXMLNode)
+function parse_linear_ring_lazy(ring_node::XMLAnyNode)
     coord_child = @find_immediate_child ring_node child begin
         XML.nodetype(child) === XML.Element && tag(child) == "coordinates"
     end
@@ -194,7 +194,7 @@ function parse_linear_ring_lazy(ring_node::XML.AbstractXMLNode)
 end
 
 # Extract only the fields needed for DataFrame
-function extract_placemark_fields_lazy(placemark_node::XML.AbstractXMLNode)
+function extract_placemark_fields_lazy(placemark_node::XMLAnyNode)
     name = ""
     description = ""
     geometry = missing

@@ -4,7 +4,7 @@ export Node, to_xml, xml_children
 
 using OrderedCollections: OrderedDict
 import XML
-import ..Types: KMLElement, KMLFile, LazyKMLFile, Document
+import ..Types: KMLElement, KMLFile, LazyKMLFile, Document, XMLAnyNode
 import ..Enums
 import ..Coordinates: coordinate_string
 
@@ -80,7 +80,7 @@ function Node(k::KMLFile)
         elseif child isa XML.Node
             # Already a Node, use as is
             child
-        elseif child isa XML.AbstractXMLNode
+        elseif child isa XMLAnyNode
             # Convert other XML nodes to Node
             XML.Node(child)
         else

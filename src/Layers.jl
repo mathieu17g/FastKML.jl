@@ -4,7 +4,7 @@ export list_layers, get_layer_names, get_num_layers, get_layer_info, select_laye
 
 using REPL.TerminalMenus
 using Base: read  # Import read from Base
-import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark
+import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, XMLAnyNode
 import XML: XML, children, tag, attributes
 import ..XMLParsing: extract_text_content_fast
 import ..Macros: @find_immediate_child, @for_each_immediate_child, @count_immediate_children
@@ -45,13 +45,13 @@ end
 # Lazy (LazyKMLFile) helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-function _find_kml_element(doc::XML.AbstractXMLNode)
+function _find_kml_element(doc::XMLAnyNode)
     kml_elem = @find_immediate_child doc child (tag(child) == "kml")
     isnothing(kml_elem) && error("No <kml> tag found in LazyKMLFile")
     return kml_elem
 end
 
-function _is_feature_tag(tag_name::String)
+function _is_feature_tag(tag_name::AbstractString)
     tag_name in
     ("Document", "Folder", "Placemark", "NetworkLink", "GroundOverlay", "PhotoOverlay", "ScreenOverlay", "gx:Tour")
 end
@@ -62,11 +62,11 @@ end
 _is_layer_tag(::Nothing) = false
 _is_container_tag(::Nothing) = false
 
-function _is_container_tag(tag_name::String)
+function _is_container_tag(tag_name::AbstractString)
     tag_name in ("Document", "Folder")
 end
 
-function _get_name_from_node(node::XML.AbstractXMLNode)
+function _get_name_from_node(node::XMLAnyNode)
     name_node = @find_immediate_child node child begin
         XML.nodetype(child) === XML.Element && tag(child) == "name"
     end
@@ -131,7 +131,7 @@ function _count_placemarks_recursive(container::Union{Document, Folder})::Int
     return count
 end
 
-function _count_placemarks_recursive_lazy(node::XML.AbstractXMLNode)::Int
+function _count_placemarks_recursive_lazy(node::XMLAnyNode)::Int
     count = 0
     @for_each_immediate_child node child begin
         child_tag = tag(child)
@@ -309,7 +309,7 @@ function select_layer(file::Union{KMLFile,LazyKMLFile}, layer_spec::Union{Nothin
                 elseif origin isa Document || origin isa Folder
                     num_placemarks = _count_placemarks_recursive(origin)
                     item_count_str = " ($num_placemarks placemarks)"
-                elseif origin isa XML.AbstractXMLNode
+                elseif origin isa XMLAnyNode
                     placemark_count = _count_placemarks_recursive_lazy(origin)
                     item_count_str = " ($placemark_count placemarks)"
                 end
@@ -373,7 +373,7 @@ function list_layers(kml_input::Union{AbstractString,KMLFile,LazyKMLFile})
         elseif origin isa Document || origin isa Folder
             num_placemarks = _count_placemarks_recursive(origin)
             item_count_str = " ($num_placemarks placemarks)"
-        elseif origin isa XML.AbstractXMLNode
+        elseif origin isa XMLAnyNode
             placemark_count = _count_placemarks_recursive_lazy(origin)
             item_count_str = " ($placemark_count placemarks)"
         end

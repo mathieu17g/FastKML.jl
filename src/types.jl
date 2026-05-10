@@ -35,6 +35,14 @@ using StaticArrays
 using TimeZones, Dates
 using InteractiveUtils: subtypes
 import XML
+
+# XML.jl v0.3 had an abstract supertype `XML.AbstractXMLNode` that both
+# `XML.Node` and `XML.LazyNode` shared. v0.4 dropped that supertype as part
+# of the rewrite (see joshday/XML.jl PR #54). FastKML uses `XMLAnyNode` in
+# all the places that used to refer to `AbstractXMLNode` — function
+# signatures, `KMLFile.children` element type, `LazyKMLFile.root_node` type,
+# and the `Metadata.children` opaque-payload field.
+const XMLAnyNode = Union{XML.Node, XML.LazyNode}
 import ..Enums
 
 # Coordinate type aliases
@@ -65,7 +73,11 @@ macro required(ex)
 end
 
 # ─── KMLElement base type ────────────────────────────────────────────────────
-abstract type KMLElement{attr_names} <: XML.AbstractXMLNode end
+# `KMLElement` no longer subtypes any XML supertype (v0.4 doesn't expose one).
+# The XML interface methods (`XML.tag`, `XML.attributes`, …) are still defined
+# on `KMLElement` below — multiple dispatch doesn't require an inheritance
+# relationship, just a method definition for the concrete type.
+abstract type KMLElement{attr_names} end
 const NoAttributes = KMLElement{()}
 
 # ─── Abstract type hierarchy ─────────────────────────────────────────────────
@@ -140,10 +152,10 @@ end
 
 # ─── Container types ─────────────────────────────────────────────────────────
 mutable struct KMLFile
-    children::Vector{Union{XML.AbstractXMLNode,KMLElement}}
+    children::Vector{Union{XMLAnyNode,KMLElement}}
 end
 KMLFile(content::KMLElement...) = KMLFile(collect(content))
-Base.push!(k::KMLFile, x::Union{XML.AbstractXMLNode,KMLElement}) = push!(k.children, x)
+Base.push!(k::KMLFile, x::Union{XMLAnyNode,KMLElement}) = push!(k.children, x)
 Base.:(==)(a::KMLFile, b::KMLFile) = all(getfield(a, f) == getfield(b, f) for f in fieldnames(KMLFile))
 
 function Base.show(io::IO, k::KMLFile)
@@ -156,12 +168,12 @@ function Base.show(io::IO, k::KMLFile)
 end
 
 mutable struct LazyKMLFile
-    root_node::XML.AbstractXMLNode
+    root_node::XMLAnyNode
     _layer_cache::Dict{String,Any}
     _layer_info_cache::Union{Nothing,Vector{Tuple{Int,String,Any}}}
     _lock::ReentrantLock
     
-    LazyKMLFile(root_node::XML.AbstractXMLNode) = new(root_node, Dict{String,Any}(), nothing, ReentrantLock())
+    LazyKMLFile(root_node::XMLAnyNode) = new(root_node, Dict{String,Any}(), nothing, ReentrantLock())
 end
 
 Base.:(==)(a::LazyKMLFile, b::LazyKMLFile) = a.root_node == b.root_node
@@ -393,7 +405,7 @@ end
 # so legacy KML files round-trip without losing the payload. New files should
 # use <ExtendedData> instead.
 Base.@kwdef mutable struct Metadata <: NoAttributes
-    children::Vector{XML.AbstractXMLNode} = XML.AbstractXMLNode[]
+    children::Vector{XMLAnyNode} = XMLAnyNode[]
 end
 
 Base.@kwdef mutable struct Alias <: NoAttributes

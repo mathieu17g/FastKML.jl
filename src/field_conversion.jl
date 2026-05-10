@@ -7,7 +7,7 @@ using TimeZones
 using Dates
 using StaticArrays  # For StaticArray type checking
 import ..Types
-import ..Types: Coord2, Coord3, tagsym
+import ..Types: Coord2, Coord3, tagsym, XMLAnyNode
 import ..Enums
 import ..Coordinates: parse_coordinates_automa
 import ..TimeParsing: parse_iso8601
@@ -216,7 +216,7 @@ end
 Special handler for Polygon boundary elements.
 The object_fn parameter should be the object parsing function from the parsing module.
 """
-function handle_polygon_boundary!(polygon, boundary_node::XML.AbstractXMLNode, boundary_type::Symbol, object_fn)
+function handle_polygon_boundary!(polygon, boundary_node::XMLAnyNode, boundary_type::Symbol, object_fn)
     # If object_fn not provided, we can't parse LinearRing nodes
     if object_fn === nothing
         @warn "object function not provided to handle_polygon_boundary!"
