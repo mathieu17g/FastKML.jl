@@ -70,6 +70,90 @@ au 2026-05-10) :
 3 macros, adaptation tables.jl + xml_parsing.jl + Layers.jl, tests,
 profile/benchmark v0.4).
 
+#### État courant de la migration (RESUME HERE)
+
+**Au 2026-05-10, commit `43ef622`** : la migration s'est révélée
+beaucoup moins coûteuse que prévu (~45 min réels au lieu de jours).
+
+**Ce qui est fait** :
+- `XMLAnyNode = Union{XML.Node, XML.LazyNode}` défini dans `types.jl`
+  + propagé dans 6 fichiers source.
+- `KMLElement <: XML.AbstractXMLNode` supprimé (impossible de
+  subtype un Union ; le dispatch méthode reste).
+- 3 macros `@for_each_immediate_child` / `@find_immediate_child` /
+  `@count_immediate_children` réécrites en uniforme `for child in
+  XML.children(node)` (190 → 25 lignes). Plus de
+  `XML.next!`/`.raw`/`XML.depth(::LazyNode)`.
+- `_is_feature_tag`, `_is_container_tag` : signatures `String` →
+  `AbstractString` (v0.4 `tag()` retourne `SubString{String}`).
+- `Project.toml` + `test/Project.toml` : `[compat] XML = "0.4"`.
+
+**Ce qui marche** :
+- `using FastKML` (precompile clean).
+- `read(path, KMLFile)` eager : tous les KMLElement matérialisés.
+- `read(path, LazyKMLFile)` lazy : `_lazy_top_level_features` et
+  `get_layer_info` walkent l'arbre correctement.
+- `DataFrame(file::LazyKMLFile)` : 3 placemarks extraits avec
+  Point/Polygon/LineString sur `test/example.kml`.
+- Test suite : Issue Coverage 2/2 + ~70 Empty Constructors avant
+  blocage sur serialization.
+
+**Ce qui reste — `xml_serialization.jl` migration**
+
+Le constructeur `XML.Node` a changé en v0.4. Cassure à
+`src/xml_serialization.jl:24` (la fonction `Node(o::T) where {T<:KMLElement}`)
++ d'autres sites en cascade.
+
+API mapping v0.3 → v0.4 :
+
+```julia
+# v0.3 (current FastKML code, breaks)
+XML.Node(NodeType, tag::String, attrs::OrderedDict{String,String}, value, children)
+
+# v0.4 target
+XML.Node{String}(nodetype::NodeType,
+                 tag::Union{Nothing,String},
+                 attributes::Union{Nothing,Vector{Pair{String,String}}},
+                 value::Union{Nothing,String},
+                 children::Union{Nothing,Vector{Node{String}}})
+```
+
+Différences :
+- **Type paramétrique `{S}`** explicite (utiliser `String`).
+- **Attributs** : `OrderedDict{String,String}` → `Vector{Pair{String,String}}`.
+  Conversion : `[k => v for (k, v) in attrs_dict]`.
+- **Children** : `Vector{Node}` → `Vector{Node{String}}`.
+- **Validation runtime** : v0.4 impose des règles
+  (Element doit avoir tag + pas de value, Text/CData/etc. seulement
+  value, Document seulement children). Voir `dev/XML.jl-v0.4/src/XML.jl:141-160`
+  pour les contraintes.
+
+Sites à patcher dans `xml_serialization.jl` :
+- Ligne 15 : `Node(o::T) where {T<:Enums.AbstractKMLEnum}` — pattern
+  Element + 1 Text child.
+- Ligne 24 : `Node(o::T) where {T<:KMLElement}` — Element avec
+  attributs + children récursifs.
+- Lignes 60-90 (à confirmer) : `xml_children` builder, traitement
+  des attributs.
+- Ligne ~83 : `child isa XMLAnyNode` — devrait déjà fonctionner.
+
+Pattern de migration suggéré :
+1. Helper `_build_attrs(o::KMLElement)::Union{Nothing, Vector{Pair{String,String}}}`
+   qui produit la nouvelle forme.
+2. Tous les `XML.Node(NodeType.X, tag, attrs, val, kids)` → 
+   `XML.Node{String}(NodeType.X, tag, attrs_vec, val, kids_typed)`.
+3. Les `Vector{Node}` deviennent `Vector{Node{String}}`.
+
+Effort estimé : **30-60 min** au vu de ce qui s'est passé pour le
+parsing path.
+
+Test de validation après fix :
+```julia
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+La testset "Empty constructor roundtrips with XML.Node" doit passer
+les ~270 itérations sur tous les `concrete_subtypes(KMLElement)`.
+
 ### Performance — pistes (deferred)
 
 FastKML already beats ArchGDAL on all four benchmark URLs (see archive
