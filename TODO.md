@@ -8,6 +8,68 @@ completed milestones. For released changes, see
 
 ## Active items
 
+### Migration v0.4 — anticipée sur cette branche `wip-xml-v0.4`
+
+**Finalité** : être *day-zero ready* lors du merge de
+[`JuliaComputing/XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54)
+("WIP XML.jl v0.4: Rewrite of internals, streaming tokenizer, XPath
+support, and bug fixes" par joshday). Cette PR est mature — 9 semaines
+ouverte, polish phase depuis fin avril, 14/15 CI verts (le seul fail
+est XLSX.jl downstream que joshday s'engage à fixer). Estimation de
+merge **mode 6-10 semaines** (mi-juin à mi-juillet 2026), avec la
+rédaction d'une présomption à 25%/50%/25% optimiste/médian/pessimiste.
+
+**Pourquoi anticiper plutôt qu'attendre** : la migration touche le
+cœur de FastKML (macros d'itération, parsing lazy, tokenizer). Faire
+le travail en amont permet (i) de **valider l'estimation perf**
+(-25-35% wall-clock + -30-45% mémoire vs `wip-xml-next-bang-adoption`,
+voir `CHANGELOG.md`), (ii) de **cartographier toutes les cassures
+d'API** sur un terrain stable, (iii) de pouvoir **contribuer à la PR**
+si on trouve des bugs en cours de route.
+
+**Setup local** :
+- `dev/XML.jl-v0.4/` est un clone de `joshday/XML.jl@main` épinglé sur
+  le HEAD de la PR #54 (SHA `e7e21a7…` au 2026-04-24).
+- Remotes configurés : `origin` = `joshday/XML.jl` (lecture upstream),
+  `mathieu17g` = `mathieu17g/XML.jl` (push pour ouvrir une PR vers la
+  PR #54 si nécessaire).
+- `[sources] XML = {path = "dev/XML.jl-v0.4"}` dans `Project.toml`
+  bypasse le registre pour cette branche uniquement.
+- `dev/` est gitignored. Pour reproduire le setup sur une autre
+  machine :
+  ```sh
+  cd dev/
+  git clone https://github.com/joshday/XML.jl XML.jl-v0.4
+  cd XML.jl-v0.4
+  git checkout e7e21a7265f2bf8a0bc1d0018fbf871e5aa0e587
+  git remote add mathieu17g https://github.com/mathieu17g/XML.jl.git
+  ```
+
+**Première cartographie** (sondée par `julia --project=. -e 'using FastKML'`
+au 2026-05-10) :
+- ❌ `XML.AbstractXMLNode` n'existe plus en v0.4 — utilisé dans
+  `src/types.jl:68` et propagé partout.
+- (suite de la cartographie à faire au cours de la migration —
+  rewrite des macros, drop des snapshots `XML.LazyNode(child.raw)`
+  dans Layers.jl, suppression de `_peek_text_content` au profit du
+  `value()` SubString-natif, adaptation de `extract_placemark_fields_lazy`
+  et `parse_geometry_lazy` à `children(node)` retournant un Vector.)
+
+**Stay/leave criteria** :
+- **Stay (continue à anticiper)** tant que la PR #54 reste active
+  (commits récents, pas d'abandon explicite).
+- **Update** quand joshday push de nouveaux commits — `git fetch
+  origin && git checkout <new-SHA>` dans `dev/XML.jl-v0.4/`, puis
+  `Pkg.resolve` côté FastKML. Mettre à jour la mention du SHA
+  ci-dessus.
+- **Retire** quand v0.4 est sur le General registry — supprimer le
+  `[sources]`, bumper `[compat] XML = "0.4"` dans `Project.toml`,
+  merger ce branch dans `main`, supprimer `dev/XML.jl-v0.4/`.
+
+**Effort estimé restant** : 2.5-4.5 jours de migration (rewrite des
+3 macros, adaptation tables.jl + xml_parsing.jl + Layers.jl, tests,
+profile/benchmark v0.4).
+
 ### Performance — pistes (deferred)
 
 FastKML already beats ArchGDAL on all four benchmark URLs (see archive
