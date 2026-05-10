@@ -8,34 +8,55 @@ completed milestones. For released changes, see
 
 ## Active items
 
-### Migration v0.4 anticipée — local branch `wip-xml-v0.4`
+### Migration v0.4 — branch `wip-xml-v0.4` ✅ migration done, day-zero ready
 
-A parallel local branch off `main` overrides `XML` to point at
-`joshday/XML.jl@main` (the head of
+Local branch off `main` that targets the head of
 [`JuliaComputing/XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54)
-— v0.4 rewrite: streaming tokenizer, `Node{T}` parameterized by
-storage type, XPath, ~70% parse speedup at the source). The branch
-exists to be **day-zero ready** when v0.4 lands on the General
-registry (estimated 6-10 weeks from 2026-05-10 per current PR signal).
+(v0.4 rewrite: streaming tokenizer, `Node{T}` parameterized by
+storage type, XPath, ~70% parse speedup at the source).
 
-Setup is `[sources] XML = {path = "dev/XML.jl-v0.4"}` in
-`Project.toml`, with `dev/XML.jl-v0.4/` cloned from `joshday/XML.jl`
-and `mathieu17g/XML.jl` configured as a second remote (so we can
-contribute back to PR #54 if we find bugs during migration). Both
-`dev/` and the wip branch stay local-only until v0.4 ships.
+**Status (2026-05-10):** migration COMPLETE. **577/577 tests pass**
+on v0.4 — full functional parity with `main` on the registry XML.jl
+v0.3. Total effort: ~1.5 hours (vs initial estimate of 2.5-4.5 days
+— a 20-50× revision; see the wip branch's TODO for the post-mortem).
 
-Full migration plan, current breakage map, and stay/leave criteria
-live in the wip branch's `TODO.md`. Migration effort estimated at
-**2.5-4.5 days** of focused work (rewrite the 3 macros in
-`src/macros.jl`, drop snapshot calls in `src/Layers.jl`, replace
-`_peek_text_content` with `value()` SubString-native, adapt
-`extract_placemark_fields_lazy` and `parse_geometry_lazy` to
-`children()` returning a `Vector`).
+What was migrated:
+- `XMLAnyNode = Union{XML.Node, XML.LazyNode}` replaces v0.3's
+  `XML.AbstractXMLNode` supertype (gone in v0.4) — propagated to
+  every signature in 6 source files.
+- `KMLElement <: XML.AbstractXMLNode` dropped (Union not subtype-able).
+- 3 macros (`@for_each_immediate_child` etc.) simplified from
+  ~190 LOC of next!-based custom traversal to ~25 LOC uniform
+  `for child in XML.children(node)`. v0.4's `children()` is
+  polymorphic for both `Node` and `LazyNode`.
+- `xml_serialization.jl`: `XML.Node{String}(...)` parameterized
+  constructor, `Vector{Pair{String,String}}` attrs (was OrderedDict),
+  leaf-type children = `nothing` (v0.4 validates strict).
+- Signatures relaxed `String → AbstractString` for SubString interop:
+  `tagsym`, `_is_feature_tag`, `_is_container_tag`, `assign_field!`,
+  `assign_complex_object!`. v0.4's `tag()` returns `SubString{String}`
+  (zero-copy view into source).
 
-This supersedes the "Patching XML.jl from FastKML" item below for
-the in-flight scenario — patching only made sense as a workaround
-*if* PR #54 stalled indefinitely. Now that we're set up to migrate
-directly to v0.4, the patching path becomes a fallback.
+Setup: `[sources] XML = {path = "dev/XML.jl-v0.4"}` in `Project.toml`,
+`dev/XML.jl-v0.4/` cloned from `joshday/XML.jl` (SHA `e7e21a7`,
+unchanged since 2026-04-24), `mathieu17g/XML.jl` configured as a
+second remote for contribution-back. Both `dev/` and the wip branch
+stay local-only until PR #54 lands on the General registry.
+
+**Day-zero transition steps when v0.4 ships on General registry:**
+1. Drop `[sources]` from `Project.toml` (and from `test/Project.toml`).
+2. Keep `[compat] XML = "0.4"`.
+3. `Pkg.resolve()` — XML resolves from registry.
+4. Delete `dev/XML.jl-v0.4/` (no longer needed).
+5. Merge `wip-xml-v0.4` into `main`.
+6. Tag a `v0.2.0` release (substantial dependency bump).
+
+Estimated wait: 4-12 weeks from 2026-05-10 per current PR #54
+signal. Surveillance unchanged from previous status.
+
+This supersedes the "Patching XML.jl from FastKML" item below — that
+path was the workaround if #54 stalled, now obsolete since the
+migration is already done and waiting.
 
 ### Performance — pistes (deferred)
 
