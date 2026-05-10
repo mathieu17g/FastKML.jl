@@ -8,6 +8,35 @@ completed milestones. For released changes, see
 
 ## Active items
 
+### Migration v0.4 anticipée — local branch `wip-xml-v0.4`
+
+A parallel local branch off `main` overrides `XML` to point at
+`joshday/XML.jl@main` (the head of
+[`JuliaComputing/XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54)
+— v0.4 rewrite: streaming tokenizer, `Node{T}` parameterized by
+storage type, XPath, ~70% parse speedup at the source). The branch
+exists to be **day-zero ready** when v0.4 lands on the General
+registry (estimated 6-10 weeks from 2026-05-10 per current PR signal).
+
+Setup is `[sources] XML = {path = "dev/XML.jl-v0.4"}` in
+`Project.toml`, with `dev/XML.jl-v0.4/` cloned from `joshday/XML.jl`
+and `mathieu17g/XML.jl` configured as a second remote (so we can
+contribute back to PR #54 if we find bugs during migration). Both
+`dev/` and the wip branch stay local-only until v0.4 ships.
+
+Full migration plan, current breakage map, and stay/leave criteria
+live in the wip branch's `TODO.md`. Migration effort estimated at
+**2.5-4.5 days** of focused work (rewrite the 3 macros in
+`src/macros.jl`, drop snapshot calls in `src/Layers.jl`, replace
+`_peek_text_content` with `value()` SubString-native, adapt
+`extract_placemark_fields_lazy` and `parse_geometry_lazy` to
+`children()` returning a `Vector`).
+
+This supersedes the "Patching XML.jl from FastKML" item below for
+the in-flight scenario — patching only made sense as a workaround
+*if* PR #54 stalled indefinitely. Now that we're set up to migrate
+directly to v0.4, the patching path becomes a fallback.
+
 ### Performance — pistes (deferred)
 
 FastKML already beats ArchGDAL on all four benchmark URLs (see archive
