@@ -963,7 +963,7 @@ const _TAGSYM_CACHE = _create_tagsym_cache()
 const _FIELD_MAP_CACHE = _create_field_map_cache()
 
 # Thread-safe, read-only access functions
-function tagsym(x::String)
+function tagsym(x::AbstractString)
     get(_TAGSYM_CACHE, x) do
         # Fallback for truly unknown tags (shouldn't happen with KML)
         Symbol(replace(x, r":" => "_"))

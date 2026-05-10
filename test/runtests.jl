@@ -1022,7 +1022,7 @@ end
     @test XML.tag(pm.Metadata.children[2]) == "bar"
 
     # Empty constructor sanity check
-    @test FastKML.Metadata().children == XML.AbstractXMLNode[]
+    @test isempty(FastKML.Metadata().children)
 end
 
 @testset "gx:ViewerOptions / gx:option (Google extension)" begin

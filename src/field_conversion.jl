@@ -99,7 +99,7 @@ end
 Assign a converted string value to a field in the parent object.
 Handles both scalar and vector fields.
 """
-function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::AbstractString, original_tag::String)
+function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::AbstractString, original_tag::AbstractString)
     # Handle special field name mappings
     true_field_name = map_field_name(parent, field_name)
     
@@ -171,7 +171,7 @@ end
 """
 Assign a complex KML object to the appropriate field in the parent.
 """
-function assign_complex_object!(parent::Types.KMLElement, child_object::Types.KMLElement, original_tag::String)
+function assign_complex_object!(parent::Types.KMLElement, child_object::Types.KMLElement, original_tag::AbstractString)
     child_type = typeof(child_object)
     parent_type = typeof(parent)
 
