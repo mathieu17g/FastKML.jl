@@ -95,56 +95,94 @@ L'estimation initiale -25-35% wall-clock était basée sur les benchmarks PARSE 
 
 **Conséquence** : `wip-xml-v0.4` reste **fonctionnellement correct** (577/577 tests) mais **PAS perf-cible**. `wip-xml-next-bang-adoption` reste la baseline performante.
 
-#### Phase B/C plan — recovery v0.4 perf via streaming tokenizer (RESUME HERE)
+#### Phase B/C — Phase B exécutée : NO-GO (RESUME HERE)
 
-**Objectif Phase B** : faire matcher v0.4 la perf wip-xml-next-bang en utilisant le tokenizer streaming v0.4 (`_lazy_tokenizer(node)`) directement, sans matérialiser children.
+**Objectif initial Phase B** : faire matcher v0.4 la perf wip-xml-next-bang en utilisant le tokenizer streaming v0.4, sans matérialiser children.
 
-**Phase B — exploration locale** :
+##### Découverte B.1 (2026-05-10)
 
-| Étape | Action | Effort | Critère validation |
-|-------|--------|--------|-------------------|
-| B.1 | Lire `dev/XML.jl-v0.4/src/XMLTokenizer.jl` (489 LOC) + `dev/XML.jl-v0.4/src/lazynode.jl:135-200` (children() impl). Cartographier `_lazy_tokenizer`, `Token{S}`, `TokenKind` enum (TOKEN_OPEN_TAG/TOKEN_CLOSE_TAG/TOKEN_TEXT...), state semantics, comment depth-track sans matérialiser | 30 min | API tokenizer documentée |
-| B.2 | Prototyper `@for_each_immediate_child` v2 dans `src/macros.jl` utilisant `_lazy_tokenizer(node)` avec depth tracking — analogue au pattern v0.3 streaming mais sur Token au lieu de Raw. Garder `XML.children` pour Node eager | 1-2 h | Compile + tests fonctionnels |
-| B.3 | Micro-bench du nouveau macro vs ancien sur Placemark synthétique : allocs/call, temps/call. **GO** si allocation drop >50% sinon **NO-GO** | 30 min | BenchmarkTools sur macro isolé |
-| B.4 | Si GO : propager aux 3 macros + `Pkg.test()` | 1-2 h | 577/577 tests |
-| B.5 | Re-run benchmark URL2/4/5/6, comparer avec table ci-dessus | 5 min | **Succès** = v0.4-optim ≥ wip-xml-next-bang sur ≥3/4 URLs |
+`XML.eachchildnode(::LazyNode)` est **public et exporté en v0.4** (`dev/XML.jl-v0.4/src/lazynode.jl:280-303`). Pas besoin de hijack `_lazy_tokenizer` privé — l'API streaming existe déjà :
+- `LazyChildIterator{S,I}` wrappe `Stateful(Tokenizer)` + `Ref{Bool}` done flag
+- Yield un `LazyNode` à la fois sans matérialiser de Vector
+- Pour `Node` (eager), `children(o)` est juste `something(o.children, ())` — accès de champ, zéro alloc
 
-**Stop conditions** :
-- B.3 NO-GO : tokenizer interne ne supporte pas itération arbitrairement répétée → documenter limitation v0.4, basculer Phase C
-- B.5 perf <wip sur >1 URL : analyser écart, données pour Phase C
+##### Implémentation B.2-B.4 (2026-05-10, commit pending)
 
-**Phase C — engagement upstream joshday/XML.jl** (après Phase B) :
+`src/macros.jl` : helper polymorphique
+```julia
+@inline _children_iter(n::XML.Node) = XML.children(n)         # Vector existant
+@inline _children_iter(n::XML.LazyNode) = XML.eachchildnode(n) # streaming
+```
+Propagation aux 3 macros (`@for_each_immediate_child`, `@find_immediate_child`, `@count_immediate_children`). **577/577 tests verts**.
+
+##### Résultats B.5 — partial gain mais NO-GO sur critère
+
+| URL  | wip-next-bang | v0.4 naïf | **v0.4 + `eachchildnode`** | vs wip | gain vs naïf |
+|------|---------------|-----------|----------------------------|--------|--------------|
+| URL2 | **195 ms**    | 448 ms    | 401 ms                     | ×2.05  | -10%         |
+| URL4 | **261 ms**    | 858 ms    | 685 ms                     | ×2.62  | -20%         |
+| URL5 | **2345 ms**   | 3873 ms   | 3297 ms                    | ×1.41  | -15%         |
+| URL6 | **1254 ms**   | 3369 ms   | 2858 ms                    | ×2.28  | -15%         |
+
+Mémoire (KiB) :
+| URL  | wip-next-bang | v0.4 naïf | v0.4-each | gain vs naïf | vs wip |
+|------|---------------|-----------|-----------|--------------|--------|
+| URL2 | 192k          | 503k      | 415k      | -18%         | ×2.15  |
+| URL4 | 491k          | 2 136k    | 1 748k    | -18%         | ×3.56  |
+| URL5 | 1 900k        | 7 858k    | 6 148k    | -22%         | ×3.24  |
+| URL6 | 2 373k        | 10 751k   | 8 293k    | -23%         | ×3.49  |
+
+**Critère B.5** = v0.4-optim ≥ wip-next-bang sur ≥3/4 URLs → **0/4 respecté → NO-GO**.
+
+##### Diagnostic du gap résiduel
+
+Ce qui reste alloué après B.4 :
+1. Une `LazyChildIterator` per `eachchildnode(parent)` (struct + `Ref{Bool}`) — minimum 1 alloc par parent visité
+2. Une `LazyNode` per token enfant — la struct est petite mais `Stateful(Tokenizer)` itère et matérialise par yield
+3. Pas de fast-path `next_no_xml_space` (PR #58 — sauter ws sans tokeniser)
+4. Pas d'aliasing in-place (PR #59 — `next!`/`prev!` mute UN seul LazyNode par walk)
+
+**Le pattern `next!` v0.3** alloue 1 `LazyNode` total pour tout le walk (mutation in-place sur `Raw.tag/value/depth`). v0.4 immutable + `eachchildnode` alloue O(N) iterators + O(N) LazyNodes. C'est l'inverse exact de l'approche zéro-alloc — l'immutabilité v0.4 et le pattern deep+repeated de FastKML sont fondamentalement antagonistes sans primitif streaming dédié.
+
+#### Phase C — engagement upstream NÉCESSAIRE
+
+L'API publique seule (`eachchildnode`) plafonne à -15-23% gain mémoire et ne ferme pas le gap. Il faut un primitif streaming sans alloc en v0.4. **Phase C devient mandatory**, pas optionnelle.
+
+##### Plan Phase C
 
 | Étape | Action |
 |-------|--------|
-| C.1 | Rapport markdown ~1 page : benchmarks 3-way + B.5 + allocation profile + use case FastKML deep-walk |
-| C.2 | Designer **API publique** streaming compatible v0.4 immutable. Options : `eachtoken(node)`, `walk_children(node, callback)`, public `Tokenizer` iterator |
-| C.3 | Ouvrir **issue** (pas PR direct) sur `joshday/XML.jl` avec rapport + propositions, laisser joshday driver le design |
+| C.1 | Rapport markdown ~1 page : table 3-way + table B.5 + diagnostic alloc + use case FastKML deep+repeated walk |
+| C.2 | Esquisse design API publique. **Pistes à présenter à joshday** :<br>– Option α : `walk_children(node, callback)` style visitor — ferme sur stack, pas d'iterator alloc<br>– Option β : `Tokenizer` direct + helpers depth-tracking publics (`skip_element!`, `peek_kind`)<br>– Option γ : un `LazyNode` mutable optionnel (`MutableLazyNode`) pour les patterns next!-like, avec promesse de "sourcetext on demand"<br>– Option δ : exposer `LazyChildIterator` mais pré-allocable + réutilisable (poolable) |
+| C.3 | Ouvrir **issue** (pas PR direct) sur `joshday/XML.jl` avec rapport + 4 options + stats — laisser joshday choisir le design |
 | C.4 | Itérer feedback design |
 | C.5 | Si consensus : PR via fork `mathieu17g/XML.jl` → joshday/XML.jl@main |
 
-**Décision Phase C dépend de B** :
-- B succès via API privée → C optionnel mais souhaité (éviter API privée long-terme)
-- B échec → C nécessaire pour voie de sortie
+##### En attendant — décision sur main
 
-**Files de référence pour B.1** :
-- `dev/XML.jl-v0.4/src/XMLTokenizer.jl` — tokenizer state machine (489 LOC)
-- `dev/XML.jl-v0.4/src/lazynode.jl:135-200` — `children(::LazyNode)` impl, montre comment _lazy_tokenizer est utilisé
-- `dev/XML.jl-v0.4/src/lazynode.jl:25-30` — _lazy_pos / _lazy_tokenizer helpers
-- `dev/XML.jl-v0.4/src/XML.jl:1-30` — exports + TokenKind constants
+`wip-xml-next-bang-adoption` (PR #58 + #59 sur v0.3) reste la baseline perf. Ne pas merger `wip-xml-v0.4` sur main avant que :
+- v0.4 atteigne au moins ≥ wip-next-bang via Phase C, OU
+- la registry pousse v0.4 et v0.3 devient legacy
 
-**Setup pré-requis** (déjà en place) :
-- Branch `wip-xml-v0.4` à `9c3a108` (ou ancêtres f0d1944, 43ef622)
-- `dev/XML.jl-v0.4` clone joshday/XML.jl@main au SHA `e7e21a7`
-- benchmark project doit pointer sur dev/XML.jl-v0.4 : `julia --project=benchmark -e 'using Pkg; Pkg.develop(path="/Users/mathieu/Code/FastKML.jl/dev/XML.jl-v0.4")'`
+`wip-xml-v0.4` reste utile comme :
+- **fonctionnellement correct** (577/577) — preuve qu'on est day-zero ready API-wise
+- **base d'argumentation** pour Phase C — sans le diff v0.4, pas d'élément concret à montrer à joshday
+- **branche de référence** pour mesurer tout futur ajout v0.4 (ex: après Phase C upstream)
 
-**Pour reprendre la session suivante** :
+##### Pour reprendre la session suivante
+
 ```sh
 cd /Users/mathieu/Code/FastKML.jl
 git checkout wip-xml-v0.4
-# Lire B.1 files (XMLTokenizer.jl + lazynode.jl)
-# Puis prototyper B.2 dans src/macros.jl
+# Phase suivante = C.1 — rédiger le rapport
+# Le diff src/macros.jl + bench tables ci-dessus = matériel de base
 ```
+
+Files de référence pour C.1 :
+- `dev/XML.jl-v0.4/src/lazynode.jl:280-303` — `eachchildnode` actuel
+- `dev/XML.jl-v0.4/src/lazynode.jl:181-198` — `_lazy_skip_element!` (depth-tracking interne)
+- `dev/XML.jl/src/Raw.jl` (v0.3 + #58 + #59) — `next!`/`prev!` baseline pour comparison
+- Ce TODO section "Diagnostic du gap résiduel" — résumé technique
 
 #### Migration TERMINÉE — 577/577 tests verts (commit `f0d1944`, 2026-05-10)
 
