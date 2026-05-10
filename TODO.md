@@ -70,6 +70,82 @@ au 2026-05-10) :
 3 macros, adaptation tables.jl + xml_parsing.jl + Layers.jl, tests,
 profile/benchmark v0.4).
 
+#### Benchmark 3-way 2026-05-10 — v0.4 naïve est 2-3× PLUS LENTE que wip-xml-next-bang
+
+Run identique à `benchmark_kml_parsers.jl` sur URL2/4/5/6 :
+
+| URL                 | wip-xml-next-bang (#58+#59) | wip-xml-v0.4 (PR #54 naïf) | ArchGDAL  |
+|---------------------|-----------------------------|----------------------------|-----------|
+| URL2 enzone (5.4k)  | **195 ms**                  | 448 ms (×2.30)             | 250 ms    |
+| URL4 WRS-2 (28.5k)  | **261 ms**                  | 858 ms (×3.29)             | 297 ms    |
+| URL5 qfaults (114k) | **2345 ms**                 | 3873 ms (×1.65)            | 2425 ms   |
+| URL6 national_frs   | **1254 ms**                 | 3369 ms (×2.69)            | 3253 ms   |
+
+Mémoire (KiB) :
+| URL  | wip-xml-next-bang | wip-xml-v0.4   | ratio |
+|------|-------------------|----------------|-------|
+| URL2 | 192 459           | 503 202        | ×2.6  |
+| URL4 | 491 357           | 2 136 307      | ×4.3  |
+| URL5 | 1 899 831         | 7 857 701      | ×4.1  |
+| URL6 | 2 372 652         | 10 751 067     | ×4.5  |
+
+**Diagnostic** : ma migration utilise `XML.children(::LazyNode)` qui matérialise eagerly un Vector{LazyNode} par appel. FastKML walke en profondeur **multiple fois par fichier** (Document → Folder → Placemark → name/desc/geom → coords...) → ~170k Vector allocations sur URL4 vs 0 dans le pattern streaming `XML.next!` de wip.
+
+L'estimation initiale -25-35% wall-clock était basée sur les benchmarks PARSE de joshday. Pas sur le pattern itération deep+repeated de FastKML.
+
+**Conséquence** : `wip-xml-v0.4` reste **fonctionnellement correct** (577/577 tests) mais **PAS perf-cible**. `wip-xml-next-bang-adoption` reste la baseline performante.
+
+#### Phase B/C plan — recovery v0.4 perf via streaming tokenizer (RESUME HERE)
+
+**Objectif Phase B** : faire matcher v0.4 la perf wip-xml-next-bang en utilisant le tokenizer streaming v0.4 (`_lazy_tokenizer(node)`) directement, sans matérialiser children.
+
+**Phase B — exploration locale** :
+
+| Étape | Action | Effort | Critère validation |
+|-------|--------|--------|-------------------|
+| B.1 | Lire `dev/XML.jl-v0.4/src/XMLTokenizer.jl` (489 LOC) + `dev/XML.jl-v0.4/src/lazynode.jl:135-200` (children() impl). Cartographier `_lazy_tokenizer`, `Token{S}`, `TokenKind` enum (TOKEN_OPEN_TAG/TOKEN_CLOSE_TAG/TOKEN_TEXT...), state semantics, comment depth-track sans matérialiser | 30 min | API tokenizer documentée |
+| B.2 | Prototyper `@for_each_immediate_child` v2 dans `src/macros.jl` utilisant `_lazy_tokenizer(node)` avec depth tracking — analogue au pattern v0.3 streaming mais sur Token au lieu de Raw. Garder `XML.children` pour Node eager | 1-2 h | Compile + tests fonctionnels |
+| B.3 | Micro-bench du nouveau macro vs ancien sur Placemark synthétique : allocs/call, temps/call. **GO** si allocation drop >50% sinon **NO-GO** | 30 min | BenchmarkTools sur macro isolé |
+| B.4 | Si GO : propager aux 3 macros + `Pkg.test()` | 1-2 h | 577/577 tests |
+| B.5 | Re-run benchmark URL2/4/5/6, comparer avec table ci-dessus | 5 min | **Succès** = v0.4-optim ≥ wip-xml-next-bang sur ≥3/4 URLs |
+
+**Stop conditions** :
+- B.3 NO-GO : tokenizer interne ne supporte pas itération arbitrairement répétée → documenter limitation v0.4, basculer Phase C
+- B.5 perf <wip sur >1 URL : analyser écart, données pour Phase C
+
+**Phase C — engagement upstream joshday/XML.jl** (après Phase B) :
+
+| Étape | Action |
+|-------|--------|
+| C.1 | Rapport markdown ~1 page : benchmarks 3-way + B.5 + allocation profile + use case FastKML deep-walk |
+| C.2 | Designer **API publique** streaming compatible v0.4 immutable. Options : `eachtoken(node)`, `walk_children(node, callback)`, public `Tokenizer` iterator |
+| C.3 | Ouvrir **issue** (pas PR direct) sur `joshday/XML.jl` avec rapport + propositions, laisser joshday driver le design |
+| C.4 | Itérer feedback design |
+| C.5 | Si consensus : PR via fork `mathieu17g/XML.jl` → joshday/XML.jl@main |
+
+**Décision Phase C dépend de B** :
+- B succès via API privée → C optionnel mais souhaité (éviter API privée long-terme)
+- B échec → C nécessaire pour voie de sortie
+
+**Files de référence pour B.1** :
+- `dev/XML.jl-v0.4/src/XMLTokenizer.jl` — tokenizer state machine (489 LOC)
+- `dev/XML.jl-v0.4/src/lazynode.jl:135-200` — `children(::LazyNode)` impl, montre comment _lazy_tokenizer est utilisé
+- `dev/XML.jl-v0.4/src/lazynode.jl:25-30` — _lazy_pos / _lazy_tokenizer helpers
+- `dev/XML.jl-v0.4/src/XML.jl:1-30` — exports + TokenKind constants
+
+**Setup pré-requis** (déjà en place) :
+- Branch `wip-xml-v0.4` à `9c3a108` (ou ancêtres f0d1944, 43ef622)
+- `dev/XML.jl-v0.4` clone joshday/XML.jl@main au SHA `e7e21a7`
+- benchmark project doit pointer sur dev/XML.jl-v0.4 : `julia --project=benchmark -e 'using Pkg; Pkg.develop(path="/Users/mathieu/Code/FastKML.jl/dev/XML.jl-v0.4")'`
+
+**Pour reprendre la session suivante** :
+```sh
+cd /Users/mathieu/Code/FastKML.jl
+git checkout wip-xml-v0.4
+# Lire B.1 files (XMLTokenizer.jl + lazynode.jl)
+# Puis prototyper B.2 dans src/macros.jl
+```
+
 #### Migration TERMINÉE — 577/577 tests verts (commit `f0d1944`, 2026-05-10)
 
 Toute la migration v0.4 est appliquée. Tests à parité avec `main`.
