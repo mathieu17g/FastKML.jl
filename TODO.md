@@ -8,7 +8,37 @@ completed milestones. For released changes, see
 
 ## Active items
 
-### Migration v0.4 — branch `wip-xml-v0.4` ✅ migration done, day-zero ready
+### Migration v0.4 — branch `wip-xml-v0.4` ⚠️ fonctionnelle mais 2-3× plus lente que wip-xml-next-bang
+
+**MISE À JOUR 2026-05-10 post-benchmark** : ma migration v0.4 est
+**fonctionnellement correcte** (577/577 tests) mais **PAS perf-cible**.
+Bench 3-way URL2/4/5/6 montre que v0.4 naïf est 2-3× plus lent que
+`wip-xml-next-bang-adoption` (qui reste la baseline performante).
+
+| URL  | wip-next-bang | wip-xml-v0.4 (naïf) | ArchGDAL |
+|------|---------------|---------------------|----------|
+| URL2 | 195 ms        | 448 ms (×2.30)      | 250 ms   |
+| URL4 | 261 ms        | 858 ms (×3.29)      | 297 ms   |
+| URL5 | 2345 ms       | 3873 ms (×1.65)     | 2425 ms  |
+| URL6 | 1254 ms       | 3369 ms (×2.69)     | 3253 ms  |
+
+Cause : ma migration utilise `XML.children(::LazyNode)` qui matérialise
+eagerly un Vector{LazyNode} par appel. FastKML walke deep+repeated,
+~170k Vector allocations sur URL4 vs 0 dans le streaming `next!` de wip.
+
+**Plan de récupération B/C documenté complet sur `wip-xml-v0.4`**
+(commit `a0d45a4`, section "Phase B/C plan — RESUME HERE"):
+- **Phase B** : exploiter `_lazy_tokenizer` (API privée v0.4) pour
+  streaming au lieu de `children()`. Files de référence + critères
+  GO/NO-GO + steps détaillés.
+- **Phase C** : engager joshday upstream avec data Phase B pour
+  obtenir une API publique streaming dans v0.4.
+
+**Décision**: NE PAS merger `wip-xml-v0.4` dans `main` en l'état.
+`wip-xml-next-bang-adoption` reste baseline perf jusqu'à ce que
+Phase B aboutisse.
+
+### Migration v0.4 — branch `wip-xml-v0.4` (historique : version originale)
 
 Local branch off `main` that targets the head of
 [`JuliaComputing/XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54)
