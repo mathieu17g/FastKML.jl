@@ -171,6 +171,99 @@ if isdefined(XML, :Tokenizer)
     end
 end
 
+# Strategy 6 — v0.4 only: raw Tokenizer + RECURSIVE child walk + LazyNode
+# construction per child. This reproduces FastKML's actual lazy pattern in
+# the synthetic bench:
+#   - Use the raw Tokenizer (no Stateful, no LazyChildIterator wrappers)
+#   - Build a fresh `XML.LazyNode` for each direct child (so the body can
+#     read `tag`, `nodetype`, `value` via the standard API)
+#   - Recurse on Element children, skip subtree afterwards
+#
+# This isolates *what FastKML really pays* when adopting the raw Tokenizer
+# privately, vs strategy 5 (flat DFS, no LazyNode construction at all). The
+# delta between Strategy 5 and Strategy 6 reveals how much of the synthetic
+# 5× win comes from skipping wrapper allocation entirely vs from skipping
+# the wrappers around the Tokenizer itself.
+if isdefined(XML, :Tokenizer)
+    function walk_raw_tokenizer_recursive(node::XML.LazyNode, acc::Ref{Int})
+        data = node.data
+        start_pos = node.token.raw.offset + 1
+        tokenizer = XML.Tokenizer(data, start_pos)
+        state = XML.TokenizerState(start_pos, XML.XMLTokenizer.M_DEFAULT,
+                                   XML.XMLTokenizer.no_token(data))
+        is_elem = XML.nodetype(node) === XML.Element
+
+        # Skip parent attrs if Element
+        if is_elem
+            while true
+                result = iterate(tokenizer, state)
+                result === nothing && return
+                token, state = result
+                k = token.kind
+                k === XML.XMLTokenizer.TOKEN_SELF_CLOSE && return
+                k === XML.XMLTokenizer.TOKEN_TAG_CLOSE && break
+            end
+        end
+
+        # Walk direct children
+        while true
+            result = iterate(tokenizer, state)
+            result === nothing && return
+            token, state = result
+            k = token.kind
+            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+                child = XML.LazyNode(data, token, XML.Element)
+                walk_raw_tokenizer_recursive(child, acc)
+                # Skip this subtree in the parent tokenizer
+                state = _skip_subtree_synth!(tokenizer, state)
+            elseif k === XML.XMLTokenizer.TOKEN_TEXT
+                child = XML.LazyNode(data, token, XML.Text)
+                v = XML.value(child)
+                v !== nothing && (acc[] += length(v))
+            elseif k === XML.XMLTokenizer.TOKEN_CDATA_OPEN
+                child = XML.LazyNode(data, token, XML.CData)
+                v = XML.value(child)
+                v !== nothing && (acc[] += length(v))
+                state = _skip_until_synth!(tokenizer, state,
+                                           XML.XMLTokenizer.TOKEN_CDATA_CLOSE)
+            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+                return
+            end
+        end
+    end
+
+    @inline function _skip_subtree_synth!(tokenizer, state)
+        depth = 1
+        while true
+            result = iterate(tokenizer, state)
+            result === nothing && return state
+            token, state = result
+            k = token.kind
+            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+                depth += 1
+            elseif k === XML.XMLTokenizer.TOKEN_SELF_CLOSE
+                depth -= 1
+                depth == 0 && return state
+            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+                depth -= 1
+                if depth == 0
+                    result = iterate(tokenizer, state)
+                    return result === nothing ? state : result[2]
+                end
+            end
+        end
+    end
+
+    @inline function _skip_until_synth!(tokenizer, state, target_kind)
+        while true
+            result = iterate(tokenizer, state)
+            result === nothing && return state
+            token, state = result
+            token.kind === target_kind && return state
+        end
+    end
+end
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Bench harness
 # ──────────────────────────────────────────────────────────────────────────────
@@ -200,6 +293,8 @@ function bench_one(n::Integer; seconds::Real = 3.0)
     if isdefined(XML, :Tokenizer)
         push!(runs, ("raw Tokenizer DFS (private API)",
                      :(walk_raw_tokenizer_dfs($str, Ref(0)))))
+        push!(runs, ("raw Tokenizer + recursive LazyNode",
+                     :(walk_raw_tokenizer_recursive($lazy_root, Ref(0)))))
     end
 
     for (label, expr) in runs

@@ -49,23 +49,39 @@ So the v0.3+#58+#59 lazy path beats the v0.4 eager path on URL4/URL5/URL6 — me
 
 ### Where the gap comes from
 
-I wrote a [self-contained synthetic benchmark](https://github.com/mathieu17g/FastKML.jl/blob/wip-xml-v0.4/benchmark/walk_pattern_env/walk_pattern.jl) (no FastKML dep, only XML + BenchmarkTools) that walks an N-placemark document with four strategies, tested across three XML.jl configurations. On N=100k:
+I wrote a [self-contained synthetic benchmark](https://github.com/mathieu17g/FastKML.jl/blob/wip-xml-v0.4/benchmark/walk_pattern_env/walk_pattern.jl) (no FastKML dep, only XML + BenchmarkTools) that walks an N-placemark document with six strategies, tested across three XML.jl configurations. On N=100k:
 
-| Strategy                          | v0.3.8 registry | v0.3.8 + #58 + #59 | v0.4.0       |
-|-----------------------------------|-----------------|---------------------|--------------|
-| `Node + children()`               | 32 ms / 1 / 0 KiB         | 25 ms / 1 / 0 KiB         | 21 ms / 1 / 0 KiB          |
-| `LazyNode + children()`           | 278 ms / 20M / 1180 MiB   | 202 ms / 11M / 872 MiB    | 380 ms / 14M / 1280 MiB    |
-| `LazyNode + eachchildnode()`      | n/a                       | n/a                       | 371 ms / 15M / 1198 MiB    |
-| `LazyNode + next!() DFS` (PR #59) | n/a                       | **61 ms / 1.9M / 123 MiB** | n/a                       |
-| `raw Tokenizer DFS` (private)     | n/a                       | n/a                       | **73 ms / 3M / 281 MiB**   |
+| Strategy                                | v0.3.8 registry | v0.3.8 + #58 + #59 | v0.4.0       |
+|-----------------------------------------|-----------------|---------------------|--------------|
+| `Node + children()`                     | 32 ms / 0 KiB             | 25 ms / 0 KiB              | 21 ms / 0 KiB               |
+| `LazyNode + children()`                 | 278 ms / 1180 MiB         | 202 ms / 872 MiB           | 378 ms / 1280 MiB           |
+| `LazyNode + eachchildnode()`            | n/a                       | n/a                        | 370 ms / 1197 MiB           |
+| `LazyNode + next!() DFS` (PR #59)       | n/a                       | **61 ms / 123 MiB**         | n/a                        |
+| `raw Tokenizer DFS` (private, **no LazyNode**) | n/a                | n/a                        | **72 ms / 281 MiB**         |
+| `raw Tokenizer + recursive LazyNode`    | n/a                       | n/a                        | 309 ms / 1062 MiB           |
 
-The lower-bound for a zero-allocation lazy walk was ~61 ms on v0.3+#59 (a single `LazyNode` wrapper reused via in-place mutation, ~1.9M allocs total). The public v0.4 API tops out at ~371 ms (~15M allocs).
+The lower-bound for a zero-allocation lazy walk is ~61 ms on v0.3+#59 (a single `LazyNode` wrapper reused via in-place mutation). The public v0.4 API tops out at ~370 ms.
 
-The good news: directly using v0.4's `Tokenizer` + `TokenizerState` (currently inside `XML.XMLTokenizer` but not exported) gets to 73 ms — within striking distance of the v0.3 number. That suggests the underlying primitive is the right shape; the gap is in the public API surface that wraps it.
+The good news first: directly using v0.4's `Tokenizer` + `TokenizerState` (currently inside `XML.XMLTokenizer` but not exported) gets to **72 ms** — within striking distance of the v0.3 number. The underlying primitive is the right shape.
+
+The catch: that 72 ms is for a walker that *never constructs a `LazyNode`* — it just accumulates token spans directly. As soon as I add LazyNode construction per child + recursion (the "raw Tokenizer + recursive LazyNode" row above, which mirrors FastKML's actual lazy pattern), the cost jumps to 309 ms — only ~17% faster than `eachchildnode`.
+
+### Cost decomposition of the v0.4 lazy walk
+
+Comparing strategies 3, 5, and 6 reveals where each component pays:
+
+| Component                                                                     | Cost      | % of `eachchildnode` total |
+|-------------------------------------------------------------------------------|-----------|----------------------------|
+| Tokenization (strategy 5: flat DFS, no LazyNode allocation)                   | 72 ms     | 19% |
+| **LazyNode allocation per yielded child + recursion**                          | **237 ms** | **64%** |
+| `eachchildnode` wrappers (`Stateful` + `LazyChildIterator` + `Ref{Bool}`)     | 61 ms     | 17% |
+| **Total (strategy 3 — `eachchildnode`)**                                      | **370 ms** | 100% |
+
+The headline: exposing `Tokenizer` publicly would let consumers reclaim the 17% wrapper share. The dominant 64% — the per-child `LazyNode` allocation — needs a separate API affordance to recover, because v0.4's `LazyNode` is immutable and a fresh allocation is required for each yielded child.
 
 ### POC — Can FastKML adopt the raw Tokenizer directly?
 
-I tried three iterations of a FastKML walker built on `XML.Tokenizer` instead of `eachchildnode` (full writeup [here](https://github.com/mathieu17g/FastKML.jl/blob/wip-xml-v0.4/benchmark/poc_fastkml_raw_tokenizer_2026-05-11.md)). All three variants ended up **essentially equivalent** to `eachchildnode` on FastKML's real workloads:
+To confirm the synthetic decomposition transfers to real workloads, I tried three iterations of a FastKML walker built on `XML.Tokenizer` instead of `eachchildnode` (full writeup [here](https://github.com/mathieu17g/FastKML.jl/blob/wip-xml-v0.4/benchmark/poc_fastkml_raw_tokenizer_2026-05-11.md)). All three variants ended up **essentially equivalent** to `eachchildnode` on FastKML's real workloads:
 
 | URL | lazy `eachchildnode` | lazy POC v3 (raw Tokenizer) |
 |-----|----------------------|------------------------------|
@@ -74,13 +90,13 @@ I tried three iterations of a FastKML walker built on `XML.Tokenizer` instead of
 | URL5 | 3188 ms / 6004 MiB | 3219 ms / 5873 MiB |
 | URL6 | 2862 ms / 8099 MiB | 2863 ms / 8023 MiB |
 
-The bottleneck moved away from `LazyChildIterator` + `Stateful` wrappers (those went away) but the cost shifted to:
+This matches strategy 6 in the synthetic bench: ~17% better than `eachchildnode` synth, similar marginal gain here. The wrapper allocations went away, but FastKML still pays the 64% LazyNode-per-child cost (the dominant share). The two secondary residuals confirmed:
 
-1. **One `LazyNode(data, token, nodetype)` allocation per yielded child**. v0.4's immutable `LazyNode` cannot be reused — each child is a fresh allocation. On URL5, that's ~3M+ `LazyNode` allocations. The v0.3+#59 `next!`/`prev!` pattern allocated exactly one `LazyNode` for an entire walk, mutating its `raw` field in place.
+1. **One `LazyNode(data, token, nodetype)` allocation per yielded child**. On URL5, ~3M+ such allocations. v0.4's immutable `LazyNode` cannot be reused — PR #59's `next!`/`prev!` allocated exactly one wrapper for an entire walk by mutating its `raw` field in place.
 
-2. **`iterate(::Tokenizer, ::TokenizerState)` produces ~1 alloc per visited token** in the synthetic bench (3M allocs / 100k placemarks = ~30 allocs per element = ~one per token). The returned `Union{Nothing, Tuple{Token, TokenizerState}}` payload (~80 B) appears to exceed Julia's SROA stack-allocation threshold.
+2. **`iterate(::Tokenizer, ::TokenizerState)` produces ~1 alloc per visited token** (3M allocs / 100k placemarks = ~one per token, visible in strategy 5 numbers). The returned `Union{Nothing, Tuple{Token, TokenizerState}}` payload (~80 B) appears to exceed Julia's SROA stack-allocation threshold.
 
-So exposing `Tokenizer` publicly would help (~5× memory and time vs `eachchildnode` on isolated walks) but **wouldn't be sufficient on its own** to close the gap for consumers that materialize per-child wrappers — which is essentially anyone building a typed DOM-like view on top of LazyNode.
+So exposing `Tokenizer` publicly would help when consumers don't need a per-child wrapper (strategy 5: ×5 over `eachchildnode`), but **wouldn't move the needle for consumers that materialize one** — which is essentially anyone building a typed DOM-like view on top of `LazyNode`.
 
 ### Design questions
 
