@@ -201,6 +201,27 @@ function table_with_fastkml(path; layer::Union{Nothing,Integer} = nothing)
 end
 
 """
+    table_with_fastkml_eager(path; layer = nothing)
+
+Eager-mode counterpart of [`table_with_fastkml`](@ref): parses the file into
+a fully materialized `KMLFile` (every KML element instantiated as a typed
+Julia struct) before extracting the placemark DataFrame. Comparison target
+when measuring whether XML.jl v0.4's parse improvements translate to a
+gain on the FastKML eager path — independent of the lazy walk regression.
+"""
+function table_with_fastkml_eager(path; layer::Union{Nothing,Integer} = nothing)
+    if layer !== nothing
+        return DataFrame(read(path, FastKML.KMLFile); layer = layer)
+    end
+    file = read(path, FastKML.KMLFile)
+    n = FastKML.get_num_layers(file)
+    n == 0 && return DataFrame()
+    n == 1 && return DataFrame(file; layer = 1)
+    dfs = [DataFrame(file; layer = k) for k in 1:n]
+    return vcat(dfs...; cols = :union)
+end
+
+"""
 Full `read → convert → DataFrame` with ArchGDAL.jl.
 
 If `layer === nothing` (the default), concatenate every layer ArchGDAL
@@ -449,6 +470,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
 
     println(BENCHMARK_SECTION_CRAYON("Starting benchmarks..."))
     bench_fastkml_result = @benchmark table_with_fastkml($kml_file_path) seconds = benchmark_seconds
+    bench_fastkml_eager_result = @benchmark table_with_fastkml_eager($kml_file_path) seconds = benchmark_seconds
     bench_gdal_result = @benchmark table_with_archgdal($kml_file_path) seconds = benchmark_seconds
 
     # ────────────────────────── print results ─────────────────────────────────── #
@@ -457,26 +479,30 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
 
     # Calculate values first
     fastkml_time_ms = median(bench_fastkml_result).time / 1e6
+    fastkml_eager_time_ms = median(bench_fastkml_eager_result).time / 1e6
     gdal_time_ms = median(bench_gdal_result).time / 1e6
     fastkml_mem_kib = round(Int, median(bench_fastkml_result).memory / 1024)
+    fastkml_eager_mem_kib = round(Int, median(bench_fastkml_eager_result).memory / 1024)
     gdal_mem_kib = round(Int, median(bench_gdal_result).memory / 1024)
 
-    # Print table header
+    # Print table header (3 backend columns)
     print(TABLE_HEADER_CRAYON(rpad("Metric", 30)))
     print(" ") # Separator space
-    print(TABLE_HEADER_CRAYON(lpad("FastKML.jl", 15)))
+    print(TABLE_HEADER_CRAYON(lpad("FastKML lazy", 15)))
+    print(" ") # Separator space
+    print(TABLE_HEADER_CRAYON(lpad("FastKML eager", 15)))
     print(" ") # Separator space
     print(TABLE_HEADER_CRAYON(lpad("ArchGDAL.jl", 15)))
     println() # Newline
 
-    println(SEPARATOR_CRAYON(rpad("", 30 + 1 + 15 + 1 + 15, '-'))) # Total width for the line
+    println(SEPARATOR_CRAYON(rpad("", 30 + (1 + 15) * 3, '-')))
 
     # Print data rows
     print(METRIC_NAME_CRAYON(rpad("Median elapsed time (ms)", 30)))
-    Printf.@printf " %15.2f %15.2f\n" fastkml_time_ms gdal_time_ms
+    Printf.@printf " %15.2f %15.2f %15.2f\n" fastkml_time_ms fastkml_eager_time_ms gdal_time_ms
 
     print(METRIC_NAME_CRAYON(rpad("Memory (KiB)", 30)))
-    Printf.@printf " %15d %15d\n" fastkml_mem_kib gdal_mem_kib
+    Printf.@printf " %15d %15d %15d\n" fastkml_mem_kib fastkml_eager_mem_kib gdal_mem_kib
 
     println(SEPARATOR_CRAYON(rpad("", 80, '─')))
     println() # Add a blank line for separation if calling multiple times
