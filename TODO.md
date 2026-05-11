@@ -95,6 +95,80 @@ L'estimation initiale -25-35% wall-clock était basée sur les benchmarks PARSE 
 
 **Conséquence** : `wip-xml-v0.4` reste **fonctionnellement correct** (577/577 tests) mais **PAS perf-cible**. `wip-xml-next-bang-adoption` reste la baseline performante.
 
+#### Phase C — 2 issues upstream à ouvrir sur joshday/XML.jl (RESUME HERE 2026-05-11)
+
+**État** : matériau bench complet, prêt à rédiger 2 issues. Phase B (eachchildnode adoption) commitée `964feab` — gain partiel conservé.
+
+##### Synthèse 3-way bench standalone (commit `2499873`)
+
+Fichier `benchmark/walk_pattern_env/walk_pattern.jl` + `results_2026-05-11.md`. **Self-contained**, pas de FastKML dep — directement PR-able upstream. Détecte les APIs via `isdefined` et adapte les stratégies par version.
+
+Sur N=100k placemarks synthétiques :
+
+| Strategy                  | v0.3.8 registry | v0.3.8 + #58 + #59     | v0.4.0           |
+|---------------------------|-----------------|-------------------------|------------------|
+| Node + children() (eager) | 32 ms / 0       | 25 ms / 0               | 21 ms / 0        |
+| LazyNode + children()     | 278 ms / 1180 MiB | **202 ms / 872 MiB**  | **365 ms / 1280 MiB** ⚠️ |
+| LazyNode + eachchildnode()| n/a             | n/a                     | 375 ms / 1198 MiB |
+| LazyNode + next!() DFS    | n/a             | **61 ms / 123 MiB** ✨   | n/a              |
+
+##### Diagnostic 5 points pour issues
+
+1. **PR #58 (ctx-share)** : -27% temps / -25% mem sur `LazyNode + children()` path. Scope plus large que décrit. 9.2M allocs économisées sur 100k pm.
+2. **PR #59 (`next!` DFS)** : seule API qui atteint comportement O(1) alloc/walk. 1.9M allocs vs 10-20M children-based. ×3.3 plus rapide, ×7 moins mémoire.
+3. **v0.4 régresse `children()` lazy vs v0.3+#58** : ×1.8 plus lent (365 vs 202 ms), ×1.5 mem. Gain ctx-share intrinsèque MAIS plus que compensé par allocations `LazyChildIterator`+`Stateful(Tokenizer)`.
+4. **v0.4 `eachchildnode` ≠ alternative à `next!`** : marginal vs `children()` (-6% mem, +3% temps). Pas la classe perf de #59.
+5. **Net** : v0.3+#59 best path → v0.4 best path = **×6 plus lent, ×10 plus de mémoire**.
+
+##### Plan 2 issues distinctes — à rédiger
+
+**Issue A** — `Streaming walk primitive for LazyNode (regression vs PR #59 next!())` :
+- Headline : "v0.4 lacks the O(1)-allocation walk pattern that PR #59 demonstrated on v0.3"
+- Référence bench `benchmark/walk_pattern_env/` (3-way) + résultats `results_2026-05-11.md`
+- Présente le gap 61ms → 365ms (×6 régression sur le best lazy path)
+- Use case : deep+repeated lazy walk (FastKML, mais argumentation indépendante du package)
+- Propose 4 options de design comme **questions ouvertes** à joshday (pas comme demandes) :
+  - α : `walk_children(node, callback)` style visitor
+  - β : exposer `Tokenizer` + helpers depth-tracking publics
+  - γ : `MutableLazyNode` opt-in
+  - δ : `LazyChildIterator` poolable / pré-allocable
+- Tone : "I observed X, here is reproduction, what's your thinking?" pas "you must add Y"
+
+**Issue B** — `LazyNode + children() net regression vs v0.3.8 + PR #58` :
+- Headline : "v0.4 LazyNode + children() is 1.8x slower / 1.5x more memory than v0.3.8 + PR #58 on flat lazy walk"
+- Référence le même bench
+- Diagnostic : le coût intrinsèque `ctx-copy` éliminé en v0.4 (good), MAIS introduit en v0.4 le coût `LazyChildIterator` + `Stateful(Tokenizer)` par `children()` interne. Net = perte.
+- Plus mineure que A, mais c'est une régression directe sans changement d'API → plus facile à corriger côté joshday probablement (optimiser le path interne)
+
+##### Pour reprendre la session suivante
+
+```sh
+cd /Users/mathieu/Code/FastKML.jl
+git checkout wip-xml-v0.4   # à 2499873
+# Lire TODO.md section "Phase C — 2 issues upstream"
+# Lire benchmark/walk_pattern_env/results_2026-05-11.md
+# Action C.1.A : rédiger l'issue A en markdown local (.github/ISSUE_TEMPLATE/ ou docs/)
+# Action C.1.B : rédiger l'issue B
+# Action C.2 : valider avec utilisateur avant ouverture sur GitHub
+```
+
+Fichiers de référence pour la rédaction :
+- `benchmark/walk_pattern_env/walk_pattern.jl` — script bench
+- `benchmark/walk_pattern_env/results_2026-05-11.md` — résultats bruts 3 tailles
+- `dev/XML.jl-v0.4/src/lazynode.jl:270-303` — `eachchildnode` impl
+- `dev/XML.jl/src/XML.jl:138-170` — `next!`/`prev!` impl PR #59
+- `dev/XML.jl/src/Raw.jl:428-470` — `next_no_xml_space` PR #58 ctx-share
+
+Setup pour reproduire bench :
+```sh
+julia --project=benchmark/walk_pattern_env -e 'using Pkg; Pkg.add(name="XML", version="0.3.8")'  # v0.3.8 reg
+julia --project=benchmark/walk_pattern_env -e 'using Pkg; Pkg.develop(path="dev/XML.jl")'        # v0.3+PRs
+julia --project=benchmark/walk_pattern_env -e 'using Pkg; Pkg.develop(path="dev/XML.jl-v0.4")'   # v0.4
+julia --project=benchmark/walk_pattern_env benchmark/walk_pattern_env/walk_pattern.jl
+```
+
+---
+
 #### Phase B/C — Phase B exécutée : NO-GO (RESUME HERE)
 
 **Objectif initial Phase B** : faire matcher v0.4 la perf wip-xml-next-bang en utilisant le tokenizer streaming v0.4, sans matérialiser children.
