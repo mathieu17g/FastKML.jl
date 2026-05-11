@@ -138,6 +138,39 @@ if isdefined(XML, :next!)
     end
 end
 
+# Strategy 5 — v0.4 only: raw Tokenizer DFS via private XMLTokenizer module
+#
+# Direct use of `XML.Tokenizer` + `TokenizerState` iterator interface
+# (imported into XML namespace from .XMLTokenizer but NOT exported).
+# Both types are immutable structs (TokenizerState is explicitly marked
+# SROA-friendly in v0.4); no Stateful wrapper, no LazyChildIterator,
+# no LazyNode allocation per yielded child.
+#
+# Token kinds also live in XML.XMLTokenizer (not exported); we capture them
+# once outside the loop to make the dispatch cheap.
+#
+# If this strategy matches or beats Strategy 4 (next!), it demonstrates that
+# v0.4's tokenizer is the right primitive for a public zero-allocation walk
+# API — and that the regression observed via `eachchildnode` is purely a
+# matter of API surface, not of underlying capability.
+if isdefined(XML, :Tokenizer)
+    const _RAW_TOK_TEXT = XML.XMLTokenizer.TOKEN_TEXT
+    const _RAW_TOK_CDATA = XML.XMLTokenizer.TOKEN_CDATA_CONTENT
+    function walk_raw_tokenizer_dfs(data::AbstractString, acc::Ref{Int})
+        tokenizer = XML.Tokenizer(data, 1)
+        result = iterate(tokenizer)
+        while result !== nothing
+            token, state = result
+            kind = token.kind
+            if kind === _RAW_TOK_TEXT || kind === _RAW_TOK_CDATA
+                acc[] += ncodeunits(token.raw)
+            end
+            result = iterate(tokenizer, state)
+        end
+        nothing
+    end
+end
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Bench harness
 # ──────────────────────────────────────────────────────────────────────────────
@@ -164,6 +197,10 @@ function bench_one(n::Integer; seconds::Real = 3.0)
         push!(runs, ("LazyNode + next!() DFS",
                      :(walk_lazy_next_dfs(parse($str, XML.LazyNode), Ref(0)))))
     end
+    if isdefined(XML, :Tokenizer)
+        push!(runs, ("raw Tokenizer DFS (private API)",
+                     :(walk_raw_tokenizer_dfs($str, Ref(0)))))
+    end
 
     for (label, expr) in runs
         b = eval(:(@benchmark $expr seconds = $seconds))
@@ -178,6 +215,7 @@ function main()
     println("  XML.jl version: ", pkgversion(XML))
     println("  eachchildnode available: ", isdefined(XML, :eachchildnode))
     println("  next! available:         ", isdefined(XML, :next!))
+    println("  raw Tokenizer available: ", isdefined(XML, :Tokenizer))
     println("=" ^ 76)
     for n in (1_000, 10_000, 100_000)
         bench_one(n; seconds = 3.0)
