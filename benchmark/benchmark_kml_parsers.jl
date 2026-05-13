@@ -34,44 +34,70 @@ using Profile
 #  FastKML's lenient parser recovers the geometry correctly; ArchGDAL's
 #  strict-spec parser reduces each ring to a single point. Documented in
 #  docs/src/coordinate_parsing.md as a known KML interoperability issue.
+#  Structure: 20 Placemarks each aggregating many Polygons via
+#  MultiGeometry (~24 300 Polygons / ~541 MultiGeometry / ~24 900
+#  LinearRings, ≈1 215 Polygons per Placemark) — complex multi-polygon
+#  soil zones. ~55 MiB decompressed.
 URL1 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/USEDO.kmz"
 #* Matches end-to-end on all four compared columns (5 411 rows).
-#  FastKML ~1.25× faster than ArchGDAL on this file.
+#  Structure: 5 411 Placemarks under 1 Document and 1 Folder. Geometry:
+#  5 429 Polygons wrapped in 5 411 MultiGeometry (≈1.003 Polygons per
+#  Placemark), 5 475 LinearRings — a handful of Polygons carry inner
+#  rings (holes). ~46 MiB decompressed.
 URL2 = "https://www.dec.ny.gov/data/der/enzones/enzone2022.kmz"
 #! Same upstream domain and root cause as URL1 (ESDAC / KMLer,
 #  comma-only delimiters; first <coordinates> is byte-identical to USEDO).
+#  Structure: 15 Placemarks aggregating ~24 400 Polygons via ~551
+#  MultiGeometry — same multi-polygon soil-zone pattern as URL1.
+#  ~55 MiB decompressed.
 URL3 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/Aglim1.kmz"
-#* Matches end-to-end (28 557 rows). FastKML is ~14% *slower* than
-#  ArchGDAL on this file (a large flat layer of point Placemarks);
-#  suspected hot path on wide-and-shallow files in xml_parsing.jl —
-#  investigation tracked in TODO.md.
+#* Matches end-to-end (28 557 rows). Structure: 28 557 Polygon
+#  Placemarks under 1 Document, no Folder. Each Placemark = one Polygon
+#  → one LinearRing of 5 vertices forming a Landsat scene boundary
+#  quadrilateral (no MultiGeometry). A wide-and-shallow profile.
+#  ~34 MiB decompressed.
 URL4 = "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS-2_bound_world_0.kml"
-#* Matches end-to-end (114 037 rows across 8 thematic top-level Folders:
-#  Historical, Latest Quaternary, Late Quaternary, Middle/Late Quaternary,
-#  Undifferentiated Quaternary, Unspecified Age, Class B, California
-#  Offshore). With both `table_with_fastkml` and `table_with_archgdal`
-#  concatenating all top-level layers, FastKML pays the cost of iterating
-#  each layer (8 traversals of the lazy XML tree to extract per-layer
-#  placemarks) — so on this file FastKML is currently slightly slower
-#  than ArchGDAL on `main` despite being faster per-feature. See TODO.md
-#  for performance numbers and follow-up ideas.
+#* Matches end-to-end (114 037 rows). Structure verified by walking the
+#  XML tree: 8 thematic top-level Folders directly under the Document —
+#  Historical (150y), Latest Quaternary (15ky), Late Quaternary (130ky),
+#  Middle and Late Quaternary (750ky), Undifferentiated Quaternary
+#  (1.6My), Unspecified Age, Class B (various ages), California Offshore
+#  — plus 7 sub-Folders nested below them (15 Folders total). Geometry:
+#  114 474 LineStrings wrapped in 114 037 MultiGeometry (fault polyline
+#  traces). With both `table_with_fastkml` and `table_with_archgdal`
+#  concatenating all top-level layers, FastKML pays the cost of
+#  iterating each layer (8 traversals of the lazy XML tree to extract
+#  per-layer placemarks). ~420 MiB decompressed (largest file in the
+#  benchmark set).
 URL5 = "https://earthquake.usgs.gov/static/lfs/nshm/qfaults/qfaults.kmz"
 #! Matches after the benchmark methodology updates of `f0aab78` /
 #  `23222d6` (ArchGDAL multi-layer concat, name strip + entity decode),
 #  except for a single residual row whose source has a malformed
 #  `<coordinates>,,0</coordinates>` — FastKML returns `Float64[]`,
 #  ArchGDAL substitutes `(0,0,0)`. Accepted as a legitimate
-#  fallback-policy difference. FastKML ~1.83× faster than ArchGDAL
-#  (apples-to-apples, with all ArchGDAL leaf-folder layers concatenated).
+#  fallback-policy difference. Structure: 163 426 Point Placemarks
+#  (1:1 Point/Placemark, no MultiGeometry), 19 182 nested Folders.
+#  FastKML reports 3 top-level layers via `get_num_layers` while
+#  ArchGDAL maps each leaf Folder to a separate layer (~19k).
+#  ~102 MiB decompressed.
 URL6 = "https://ordsext.epa.gov/FLA/www3/national_frs.kmz"
-#? Not yet investigated.
+#? Not yet benchmarked end-to-end against ArchGDAL. Structure: 527
+#  Placemarks of mixed geometry types — 304 Point + 223 Polygon (with
+#  223 MultiGeometry and 279 LinearRings), 10 Folders. The only file in
+#  the cached benchmark set with mixed geometry — useful for multi-type
+#  robustness testing. ~3.4 MiB decompressed.
 URL7 = "https://www.neonscience.org/sites/default/files/NEON_Field_Sites_KMZ_v20_May2025.kmz"
 #! FastKML does not yet resolve `<NetworkLink>` elements, which this
-#  file relies on; pending feature work.
+#  file relies on; pending feature work. Structure: a NetworkLink-only
+#  manifest — 0 Placemarks, 2 NetworkLink elements pointing to remote
+#  KML at `geoservices.brgm.fr/KML/GEOL_1000/`. ~1.9 KiB.
 URL8 = "https://infoterre.brgm.fr/sites/default/files/upload/kml/kml_geo_1000.kml"
 #! Geometry interpretation diverges from Google Earth (which renders
 #  line strings); FastKML currently extracts points. Root cause not yet
-#  investigated.
+#  investigated. Structure: 956 LineString Placemarks (1:1
+#  LineString/Placemark, no MultiGeometry) under 1 Folder — FastKML's
+#  divergence is on the extraction side; the source clearly carries
+#  LineStrings. ~1.1 MiB decompressed.
 URL9 = "https://pubs.usgs.gov/of/2007/1264/SteepestDescents_Kilauea1983_10m_cell7500.KMZ"
 
 
