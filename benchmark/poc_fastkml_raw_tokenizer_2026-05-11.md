@@ -91,7 +91,38 @@ Two compounding allocation sources that the private-API access can't fix:
 
 The POC's negative result is itself the key finding. Exposing `Tokenizer`
 publicly **is not sufficient** to recover the v0.3+#59 perf class on
-FastKML real workloads. Two distinct upstream fixes would be needed:
+FastKML real workloads. Two distinct upstream fixes would be needed.
+
+### Methodology note — what was (and wasn't) PoC'd
+
+The three POC iterations all targeted **option β** (replacing FastKML's
+`eachchildnode`-based child iteration with raw `XML.Tokenizer` access)
+because that direction was testable **entirely within FastKML**, with
+no XML.jl-v0.4 modifications required. The negative result on β is
+conclusive on β's insufficiency in isolation for typed-DOM consumers.
+
+The other three candidate directions surfaced in Issue A — α (callback
+walker), γ (opt-in mutable cursor), δ (poolable iterator) — were **not
+PoC'd on real workloads** because each requires modifications beyond
+FastKML's own code:
+
+- **α** would require refactoring all FastKML callsites of
+  `@for_each_immediate_child` to use callback-style bodies (no
+  `break`/`continue`), affecting 8+ macro callsites.
+- **γ** would require adding a `MutableLazyNode` / `CursorNode` type
+  and `next!` operation to XML.jl-v0.4 itself, then adapting FastKML's
+  child-iteration macros to use it.
+- **δ** would require adding a poolable / reusable iterator API to
+  XML.jl.
+
+The only γ-adjacent empirical data point available is synth bench
+**technique 4** (`next!()` DFS on v0.3.8 + PR #59) — which IS the
+lower bound (~40 ms / ~102 MiB walk-only on N=100k synth, per the
+re-measurement in Issue A) and matches the behavior FastKML's
+`@for_each_immediate_child` macro had on the `wip-xml-next-bang-adoption`
+branch before the v0.4 upgrade. That is strong indirect evidence that
+γ would deliver on real workloads under v0.4, but not a direct
+measurement.
 
 ### Issue candidate A (primary) — Streaming primitive that doesn't allocate per child
 
@@ -114,20 +145,39 @@ single wrapper is reused across the walk. Possible designs:
 
 ### Issue candidate B (secondary) — `iterate(::Tokenizer)` Tuple boxing
 
-`iterate(t::Tokenizer, st::TokenizerState)` returns
-`Union{Nothing, Tuple{Token, TokenizerState}}`. The Tuple payload (~80 B)
-exceeds Julia's SROA threshold for the *Union return value*, causing one
-allocation per yielded token. Independently of any new API, optimizing
-this would help every consumer of the tokenizer (eager parse, lazy walk,
-sourcetext extraction, all of them).
+`iterate(t::Tokenizer, st::TokenizerState)` causes one heap allocation
+per yielded token (~96 B/alloc, ~3M allocs for 100k Placemarks in the
+synth's technique 5). Root-cause investigation via `@code_typed`,
+`@code_llvm`, and `isbitstype` on Julia 1.12.6 (full write-up in
+Issue A):
 
-Possible fixes upstream:
+- `iterate` is not inlined into consumer loops (kept as `invoke` in
+  the IR — its per-mode `if`/`elseif` body exceeds Julia's inliner
+  budget, and `@inline` on a wrapper does not override that).
+- `Token{String}` and `TokenizerState{String}` are non-`isbits`
+  because `SubString{String}` contains a managed `String` pointer
+  (the whole nest inherits non-bitstype).
 
-- Refactor `TokenizerState` to be smaller (currently 8 + 8 + ~32 = 48
-  bytes due to embedded `pending::Token{S}`)
-- Use a sentinel value instead of `Union{Nothing, …}` (e.g. a Tokenizer
-  with `start > ncodeunits(data)`)
-- Provide a callback iteration API that doesn't return Tuples at all
+Together these mean the returned `Tuple{Token, TokenizerState}` must
+be heap-allocated to cross the function-call boundary. This is
+structural to the chosen API/types, **not** a compiler-internal size
+threshold (the `# SROA-friendly` comment on `TokenizerState` is
+accurate for the struct's internal layout, but the intent doesn't
+carry through the iterate API boundary).
+
+Possible fixes upstream (each addresses one of the two conditions):
+
+- **Bitstype-ify `Token`** by replacing `raw::SubString{S}` with
+  `offset::Int` + `length::Int`. Breaking API change for downstream
+  consumers (text reconstructed via `SubString(data, t.offset, …)`
+  at use sites). On its own, doesn't help unless inlining of
+  `iterate` also gets unblocked.
+- **Split `iterate` into per-mode helpers**, each small enough for
+  Julia's inliner. Combined with bitstype-ified types, SROA could
+  then potentially scalarize the returned Tuple.
+- **Provide a callback iteration API** that doesn't return Tuples at
+  all (mutates a state holder instead) — bypasses both conditions
+  by construction.
 
 ## Bottom line for Issue A
 

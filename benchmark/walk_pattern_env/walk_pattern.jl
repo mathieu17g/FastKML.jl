@@ -10,7 +10,7 @@
 #   - v0.3.8 + PR #58 (ctx-share) + PR #59 (next!/prev!)
 #   - v0.4.0 (PR #54: streaming tokenizer, immutable LazyNode, eachchildnode)
 #
-# Strategies tested:
+# Extraction techniques tested:
 #
 #   1. Node + children()           — eager DOM, Vector-of-children field access
 #   2. LazyNode + children()       — lazy, but children() eagerly materializes
@@ -76,7 +76,7 @@ end
 # Walkers — all four share the same accumulation shape; only iteration differs.
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Strategy 1 — Node eager: children() returns existing Vector{Node}
+# Extraction technique 1 — Node eager: children() returns existing Vector{Node}
 function walk_node_eager(node::XML.Node, acc::Ref{Int})
     for child in XML.children(node)
         nt = XML.nodetype(child)
@@ -90,7 +90,7 @@ function walk_node_eager(node::XML.Node, acc::Ref{Int})
     nothing
 end
 
-# Strategy 2 — LazyNode naïve: children() materializes Vector{LazyNode} per call
+# Extraction technique 2 — LazyNode naïve: children() materializes Vector{LazyNode} per call
 function walk_lazy_children(node::XML.LazyNode, acc::Ref{Int})
     for child in XML.children(node)
         nt = XML.nodetype(child)
@@ -104,7 +104,7 @@ function walk_lazy_children(node::XML.LazyNode, acc::Ref{Int})
     nothing
 end
 
-# Strategy 3 — v0.4 only: LazyNode streaming via eachchildnode()
+# Extraction technique 3 — v0.4 only: LazyNode streaming via eachchildnode()
 if isdefined(XML, :eachchildnode)
     function walk_lazy_each(node::XML.LazyNode, acc::Ref{Int})
         for child in XML.eachchildnode(node)
@@ -120,7 +120,7 @@ if isdefined(XML, :eachchildnode)
     end
 end
 
-# Strategy 4 — v0.3 + PR #59 only: LazyNode in-place mutation via next!()
+# Extraction technique 4 — v0.3 + PR #59 only: LazyNode in-place mutation via next!()
 # This is a flat DFS — equivalent to "visit every node in document order
 # exactly once". It is the absolute lower bound: one LazyNode allocation for
 # the whole document.
@@ -138,7 +138,7 @@ if isdefined(XML, :next!)
     end
 end
 
-# Strategy 5 — v0.4 only: raw Tokenizer DFS via private XMLTokenizer module
+# Extraction technique 5 — v0.4 only: raw Tokenizer DFS via private XMLTokenizer module
 #
 # Direct use of `XML.Tokenizer` + `TokenizerState` iterator interface
 # (imported into XML namespace from .XMLTokenizer but NOT exported).
@@ -149,7 +149,7 @@ end
 # Token kinds also live in XML.XMLTokenizer (not exported); we capture them
 # once outside the loop to make the dispatch cheap.
 #
-# If this strategy matches or beats Strategy 4 (next!), it demonstrates that
+# If this technique matches or beats Extraction technique 4 (next!), it demonstrates that
 # v0.4's tokenizer is the right primitive for a public zero-allocation walk
 # API — and that the regression observed via `eachchildnode` is purely a
 # matter of API surface, not of underlying capability.
@@ -171,7 +171,7 @@ if isdefined(XML, :Tokenizer)
     end
 end
 
-# Strategy 6 — v0.4 only: raw Tokenizer + RECURSIVE child walk + LazyNode
+# Extraction technique 6 — v0.4 only: raw Tokenizer + RECURSIVE child walk + LazyNode
 # construction per child. This reproduces FastKML's actual lazy pattern in
 # the synthetic bench:
 #   - Use the raw Tokenizer (no Stateful, no LazyChildIterator wrappers)
@@ -180,8 +180,8 @@ end
 #   - Recurse on Element children, skip subtree afterwards
 #
 # This isolates *what FastKML really pays* when adopting the raw Tokenizer
-# privately, vs strategy 5 (flat DFS, no LazyNode construction at all). The
-# delta between Strategy 5 and Strategy 6 reveals how much of the synthetic
+# privately, vs extraction technique 5 (flat DFS, no LazyNode construction at all). The
+# delta between Extraction technique 5 and Extraction technique 6 reveals how much of the synthetic
 # 5× win comes from skipping wrapper allocation entirely vs from skipping
 # the wrappers around the Tokenizer itself.
 if isdefined(XML, :Tokenizer)
@@ -275,7 +275,7 @@ function bench_one(n::Integer; seconds::Real = 3.0)
     eager_root = parse(str, XML.Node)
     lazy_root  = parse(str, XML.LazyNode)
 
-    @printf("%-32s %10s %14s %14s\n", "Strategy", "Time (ms)", "Allocs", "Memory (KiB)")
+    @printf("%-32s %10s %14s %14s\n", "Extraction technique", "Time (ms)", "Allocs", "Memory (KiB)")
     println("─"^76)
 
     runs = Any[

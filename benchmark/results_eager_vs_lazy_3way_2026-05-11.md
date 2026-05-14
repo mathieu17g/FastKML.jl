@@ -3,7 +3,7 @@
 Run date: 2026-05-11
 Julia 1.12.6, Darwin aarch64.
 Bench script: `benchmark/benchmark_kml_parsers.jl` (with `table_with_fastkml_eager` added).
-Budget: 10 seconds per (URL, strategy).
+Budget: 10 seconds per (URL, extraction technique).
 
 Three FastKML configurations tested:
 
@@ -43,7 +43,7 @@ Why each profile matters for the lazy-walk analysis:
   layer. Per-child overhead is amortized over the largest single layer
   in the set, and the geometry payload is small (5 coords per
   Placemark). **Least favorable case for lazy strengths** and the URL
-  where ArchGDAL is hardest to beat — only v0.3+#58+#59 lazy passes it.
+  where ArchGDAL is hardest to beat — only v0.3.8+#58+#59 lazy passes it.
 - **URL5** — 8 top-level Folders × ~14k Placemarks each. FastKML's
   `LazyKMLFile` pipeline traverses the document once per layer
   (8 traversals), so any lazy walk regression is amplified ×8 on this
@@ -65,7 +65,7 @@ FastKML bug).
 
 ## Median elapsed time (ms)
 
-| URL                 | v0.3.8 reg lazy | v0.3.8 reg eager | v0.3+PRs lazy | v0.3+PRs eager | v0.4 lazy | v0.4 eager | ArchGDAL |
+| URL                 | v0.3.8 reg lazy | v0.3.8 reg eager | v0.3.8+PRs lazy | v0.3.8+PRs eager | v0.4 lazy | v0.4 eager | ArchGDAL |
 |---------------------|-----------------|-------------------|---------------|----------------|-----------|------------|----------|
 | URL2 enzone (5.4k)  | 221             | 410               | **204** ✨    | 412            | 395       | **192**    | 253-260  |
 | URL4 WRS-2 (28.5k)  | 382             | 1194              | **261** ✨    | 1101           | 688       | 534        | **299-307** |
@@ -74,7 +74,7 @@ FastKML bug).
 
 ## Median memory (MiB, rounded)
 
-| URL                 | v0.3.8 reg lazy | v0.3.8 reg eager | v0.3+PRs lazy | v0.3+PRs eager | v0.4 lazy | v0.4 eager | ArchGDAL |
+| URL                 | v0.3.8 reg lazy | v0.3.8 reg eager | v0.3.8+PRs lazy | v0.3.8+PRs eager | v0.4 lazy | v0.4 eager | ArchGDAL |
 |---------------------|-----------------|-------------------|---------------|----------------|-----------|------------|----------|
 | URL2                | 328             | 447               | **188**       | 363            | 405       | 229        | 13       |
 | URL4                | 1394            | 2124              | **480**       | 1629           | 1707      | 597        | 25       |
@@ -100,40 +100,40 @@ FastKML bug).
 - **PR #59 (next!/prev!)** unlocks zero-alloc DFS walks: the
   `@for_each_immediate_child` macro adopts `next!` and yields the best
   path on deeply-structured files. Splitting by axis:
-    - **Time**: v0.3+#58+#59 lazy is fastest on URL4 (261 vs v0.4 eager
+    - **Time**: v0.3.8+#58+#59 lazy is fastest on URL4 (261 vs v0.4 eager
       534) and URL6 (1247 vs 1924). v0.4 eager is faster on URL2 (192
       vs 204) and URL5 (1836 vs 2357), but at higher memory cost.
-    - **Memory**: v0.3+#58+#59 lazy is the most memory-efficient on
+    - **Memory**: v0.3.8+#58+#59 lazy is the most memory-efficient on
       URL2 (188 MiB), URL4 (480), and URL5 (1855); v0.4 eager wins memory
       only on URL6 (2065 vs 2320).
-    - **vs ArchGDAL**: v0.3+#58+#59 lazy beats ArchGDAL in time on
+    - **vs ArchGDAL**: v0.3.8+#58+#59 lazy beats ArchGDAL in time on
       **4/4 URLs** — the only configuration that does so.
 
 ### What v0.4 contributes
 
 - **Eager path: massively improved**. v0.4 eager is ×2.06 to ×2.63 faster
-  than v0.3+#59 eager and uses 37-69% less memory:
+  than v0.3.8+#59 eager and uses 37-69% less memory:
 
-  | URL | v0.3+PRs eager | v0.4 eager | speedup | mem reduction |
+  | URL | v0.3.8+PRs eager | v0.4 eager | speedup | mem reduction |
   |-----|----------------|------------|---------|---------------|
   | URL2 | 412 / 363 MiB  | 192 / 229 MiB | ×2.15  | -37%   |
   | URL4 | 1101 / 1629    | 534 / 597     | ×2.06  | -63%   |
   | URL5 | 4834 / 4814    | 1836 / 2239   | ×2.63  | -53%   |
   | URL6 | 4259 / 6597    | 1924 / 2065   | ×2.21  | -69%   |
 
-- **Lazy path: regressed vs v0.3+#58**. v0.4 has no `next!`/`prev!`
+- **Lazy path: regressed vs v0.3.8+#58**. v0.4 has no `next!`/`prev!`
   equivalent; `eachchildnode` allocates `LazyChildIterator` + `Stateful` per
   call; `children(::LazyNode)` materializes Vector per call. Net cost is
-  higher than the v0.3 path with PRs applied.
+  higher than the v0.3.8 path with PRs applied.
 
 ### What this means
 
-- **For FastKML right now**: stay on `wip-xml-next-bang-adoption` (v0.3 +
+- **For FastKML right now**: stay on `wip-xml-next-bang-adoption` (v0.3.8 +
   #58 + #59) — it is the only configuration where FastKML beats ArchGDAL on
   all 4 URLs in time.
 
 - **Migrating to v0.4 today** (taking the best v0.4 path vs best
-  v0.3+#58+#59 path):
+  v0.3.8+#58+#59 path):
     - **Time**: regression on **2/4 URLs** — URL4 +104% (261 → 534) and
       URL6 +54% (1247 → 1924). URL2 -6% (204 → 192) and URL5 -22%
       (2357 → 1836) improve, but on the files where lazy was already
@@ -143,9 +143,9 @@ FastKML bug).
       improves (-11%, 2320 → 2065).
 
 - **For the upstream conversation** (Phase C): v0.4's eager-path gains
-  are real (×2-2.6 speedup, 37-69% memory reduction over v0.3+#58+#59
+  are real (×2-2.6 speedup, 37-69% memory reduction over v0.3.8+#58+#59
   eager). The trade-off is that no current v0.4 API path matches the
-  zero-alloc lazy walk class that PR #59 provided under v0.3 — on URL4
+  zero-alloc lazy walk class that PR #59 provided under v0.3.8 — on URL4
   and URL6, where lazy was the optimal path, that absence is a measurable
   loss in both time and memory. Whether and how to recover this class
   under v0.4's immutable design is the substance of issue A, which lays
@@ -158,11 +158,11 @@ URL4 (WRS-2 Landsat tile boundaries) is the URL where ArchGDAL is
 hardest to beat — its profile (28.5k Polygon Placemarks in a single
 flat top-level layer, each a 5-vertex LinearRing) is a wide-and-shallow
 XML structure with simple per-Placemark geometry, an optimal case for
-GDAL's KML/LIBKML driver. **Only v0.3+#58+#59 lazy passes
+GDAL's KML/LIBKML driver. **Only v0.3.8+#58+#59 lazy passes
 it** (261 ms vs 299-307 for ArchGDAL → FastKML ~14% faster); every other
 FastKML configuration is slower than ArchGDAL on this file. The gap
 widens to v0.4 eager (534 vs 307 → FastKML ~74% slower than ArchGDAL),
-making URL4 the most sensitive file to losing the v0.3 zero-alloc lazy
+making URL4 the most sensitive file to losing the v0.3.8 zero-alloc lazy
 walk class.
 
 ## Per-URL tokenization decomposition (measured 2026-05-13)
@@ -199,9 +199,9 @@ substantial cost beyond pure tree walk.
 ### v0.4 regression cost per Placemark
 
 To compare the v0.4 lazy regression independently of total file size,
-the delta vs `v0.3 + #58 + #59` lazy divided by the number of Placemarks:
+the delta vs `v0.3.8 + #58 + #59` lazy divided by the number of Placemarks:
 
-| URL  | Placemarks | v0.3+PRs lazy (ms) | v0.4 lazy (ms) | Δ (ms) | Cost added per PM | XML depth Placemark → leaf |
+| URL  | Placemarks | v0.3.8+PRs lazy (ms) | v0.4 lazy (ms) | Δ (ms) | Cost added per PM | XML depth Placemark → leaf |
 |------|------------|--------------------|----|----|----|-----|
 | URL2 |   5 411    | 204                | 395            | 191    | **35.4 µs/PM**     | 5 (Placemark → MultiGeo → Polygon → outerBoundary → LinearRing) |
 | URL4 |  28 557    | 261                | 688            | 427    | 15.0 µs/PM         | 4 (Placemark → Polygon → outerBoundary → LinearRing) |
@@ -218,7 +218,7 @@ Two observations from this decomposition:
 
 2. **Relative regression magnitude is sensitive to baseline size** —
    URL5 has the smallest relative regression (×1.35) not because v0.4
-   handles it better, but because its `v0.3 + #58 + #59` baseline is
+   handles it better, but because its `v0.3.8 + #58 + #59` baseline is
    large (2 357 ms), so the 831 ms of v0.4-added overhead dilutes to
    ×1.35. URL4 has the largest relative regression (×2.64) because its
    baseline is small (261 ms), so 427 ms of added overhead is
@@ -238,7 +238,7 @@ julia --project=benchmark -e 'using Pkg; Pkg.add(name="XML", version="0.3.8")'
 # patch benchmark_kml_parsers.jl to add table_with_fastkml_eager + 3-col output
 julia --project=benchmark -e 'include("benchmark/benchmark_kml_parsers.jl"); run_benchmarks([URL2, URL4, URL5, URL6]; default_benchmark_seconds=10)'
 
-# v0.3 + #58 + #59 (wip-xml-next-bang-adoption)
+# v0.3.8 + #58 + #59 (wip-xml-next-bang-adoption)
 git checkout wip-xml-next-bang-adoption
 julia --project=benchmark -e 'using Pkg; Pkg.develop(path="../dev/XML.jl")'
 # same patch + run
