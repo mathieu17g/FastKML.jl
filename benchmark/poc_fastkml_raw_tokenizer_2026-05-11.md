@@ -16,7 +16,7 @@ The synthetic walk-pattern bench
 (`benchmark/walk_pattern_env/results_2026-05-11.md`) showed raw Tokenizer
 DFS at `72.9 ms / 3M allocs / 281 MiB` vs `eachchildnode` at
 `370.6 ms / 15M allocs / 1198 MiB` on N=100k flat document — a ×5 win on
-all axes. We wanted to confirm whether this synthetic gain translates to
+all axes. I wanted to confirm whether this synthetic gain translates to
 FastKML's real workloads (URL2/4/5/6).
 
 ## Three POC iterations
@@ -117,7 +117,7 @@ FastKML's own code:
 
 The only γ-adjacent empirical data point available is synth bench
 **technique 4** (`next!()` DFS on v0.3.8 + PR #59) — which IS the
-lower bound (~40 ms / ~102 MiB walk-only on N=100k synth, per the
+lower bound (~43 ms / ~102 MiB walk-only on N=100k synth, per the
 re-measurement in Issue A) and matches the behavior FastKML's
 `@for_each_immediate_child` macro had on the `wip-xml-next-bang-adoption`
 branch before the v0.4 upgrade. That is strong indirect evidence that
@@ -181,7 +181,7 @@ Possible fixes upstream (each addresses one of the two conditions):
 
 ## Bottom line for Issue A
 
-Don't claim "expose Tokenizer and we're done". The empirical answer is:
+Don't claim "expose Tokenizer and call it done". The empirical answer is:
 
 > v0.4's `Tokenizer` + `TokenizerState` are well-designed primitives, but
 > exposing them publicly recovers ~80% of the synthetic-bench gain only
