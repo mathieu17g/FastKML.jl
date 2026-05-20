@@ -107,7 +107,7 @@ because that direction was testable **entirely within FastKML**, with
 no XML.jl-v0.4 modifications required. The negative result on β is
 conclusive on β's insufficiency in isolation for typed-DOM consumers.
 
-The other three candidate directions surfaced in Issue A — α (callback
+The other three candidate directions surfaced in issue #61 — α (callback
 walker), γ (opt-in mutable cursor), δ (poolable iterator) — were **not
 PoC'd on real workloads** because each requires modifications beyond
 FastKML's own code:
@@ -124,7 +124,7 @@ FastKML's own code:
 The only γ-adjacent empirical data point available is synth bench
 **technique 4** (`next!()` DFS on v0.3.8 + PR #59) — which IS the
 lower bound (~43 ms / ~102 MiB walk-only on N=100k synth, per the
-re-measurement in Issue A) and matches the behavior FastKML's
+re-measurement in issue #61) and matches the behavior FastKML's
 `@for_each_immediate_child` macro had on the `wip-xml-next-bang-adoption`
 branch before the v0.4 upgrade. That is strong indirect evidence that
 γ would deliver on real workloads under v0.4, but not a direct
@@ -155,7 +155,7 @@ single wrapper is reused across the walk. Possible designs:
 per yielded token (~96 B/alloc, ~3M allocs for 100k Placemarks in the
 synth's technique 5). Root-cause investigation via `@code_typed`,
 `@code_llvm`, and `isbitstype` on Julia 1.12.6 (full write-up in
-Issue A):
+issue #61):
 
 - `iterate` is not inlined into consumer loops (kept as `invoke` in
   the IR — its per-mode `if`/`elseif` body exceeds Julia's inliner
@@ -185,7 +185,7 @@ Possible fixes upstream (each addresses one of the two conditions):
   all (mutates a state holder instead) — bypasses both conditions
   by construction.
 
-## Bottom line for Issue A
+## Bottom line for issue #61
 
 Don't claim "expose Tokenizer and call it done". The empirical answer is:
 

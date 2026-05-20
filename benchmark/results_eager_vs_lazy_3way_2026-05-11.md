@@ -148,7 +148,7 @@ FastKML bug).
   zero-alloc lazy walk class that PR #59 provided under v0.3.8 — on URL4
   and URL6, where lazy was the optimal path, that absence is a measurable
   loss in both time and memory. Whether and how to recover this class
-  under v0.4's immutable design is the substance of issue A, which lays
+  under v0.4's immutable design is the substance of issue #61, which lays
   out 4 candidate API directions as open questions rather than a proposed
   answer.
 
