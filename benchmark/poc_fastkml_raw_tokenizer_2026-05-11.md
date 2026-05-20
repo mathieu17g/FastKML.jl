@@ -35,8 +35,9 @@ constructing `Tokenizer` on each `iterate` call, threading state as
 | URL6 | 2938 ms / 8412 MiB | 2862 ms / 8099 MiB | +3% / +3.9% |
 
 → **Slightly worse** than `eachchildnode`. The state-tuple
-`Tuple{Tokenizer, TokenizerState}` (~64-72 bytes) exceeds Julia's SROA
-stack-allocation threshold and boxes per iteration.
+`Tuple{Tokenizer, TokenizerState}` is non-`isbits` (both element types
+contain heap refs to the source string), so it's heap-allocated at the
+iterate call boundary.
 
 ### POC v2 — state-tuple boxing avoided
 
@@ -77,15 +78,20 @@ Two compounding allocation sources that the private-API access can't fix:
    ~3M+ LazyNode allocations. `LazyNode{S}` contains `data::S` (a heap
    ref to the source String), so SROA can't fully stack-allocate it.
    The v0.3 `next!`/`prev!` pattern (PR #59) avoided this by mutating
-   a single LazyNode wrapper — that primitive is *removed* by v0.4's
-   immutable LazyNode design.
+   a single LazyNode wrapper — that linear-traversal API is *removed*
+   by v0.4 (which also makes `LazyNode` immutable as a separate design
+   choice).
 
 2. **`iterate(::Tokenizer, ::TokenizerState)` returns
-   `Union{Nothing, Tuple{Token, TokenizerState}}`** (~80 bytes payload).
-   Exceeds Julia's SROA stack-allocation threshold for the returned tuple.
-   On the synth N=100k bench, raw Tokenizer DFS (no LazyNode allocations)
-   still produced 3M allocations = ~1 alloc per visited token (3M tokens
-   on a 100k-placemark document).
+   `Union{Nothing, Tuple{Token, TokenizerState}}`**, which heap-allocates
+   the tuple at the function-call boundary. Structural — driven by
+   non-`isbits` operand types (`Token` contains a `SubString{String}`
+   field, which carries a managed pointer) + `iterate` not being inlined
+   into the consumer loop (its per-mode `if`/`elseif` body exceeds the
+   inliner budget). Full root-cause analysis in "Issue candidate B"
+   below. On the synth N=100k bench, raw Tokenizer DFS (no LazyNode
+   allocations) still produced 3M allocations = ~1 alloc per visited
+   token (3M tokens on a 100k-placemark document).
 
 ## Implication for upstream issues
 
