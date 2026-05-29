@@ -4,7 +4,9 @@
 v0.4 lazy-walk techniques against the **current PR #54 head `e532a28`**
 (+10 commits past the `e7e21a7` pin that issue #61's numbers were taken
 on), and adds **technique 7** — the new `children!()` buffer-reuse API
-(the "δ direction" from #61) that joshday landed in commit `9d129b8`.
+(the poolable-`LazyChildIterator` direction — labelled δ in
+`streaming_parser_research.md`; #61 describes it in prose, without the
+label) that joshday landed in commit `9d129b8`.
 
 Run date: 2026-05-29
 Julia 1.12.6, Darwin aarch64. `@benchmark` budget: 3 s per measurement.
@@ -63,9 +65,10 @@ level in this bench). vs the next-best v0.4 paths:
 The dominant cost — **one `LazyNode` materialized per child** (~12.5M
 allocations on N=100k) — is intrinsic to "yield a LazyNode per child"
 and is left untouched by buffer reuse. This is direct empirical
-confirmation of #61's "δ addresses only the wrapper-allocation share,
-not the dominant per-event cost; insufficient on its own" — now tested
-against the actual `children!()` API joshday shipped, not a hypothetical.
+confirmation of #61's point that a poolable `LazyChildIterator` "would
+address only the wrapper allocation share and not the dominant per-event
+cost; insufficient on its own" — now tested against the actual
+`children!()` API joshday shipped, not a hypothetical.
 
 `next!()` (tech 4) avoids the per-child cost by mutating a **single**
 `LazyNode` across the whole walk (1 wrapper alloc total) — the
