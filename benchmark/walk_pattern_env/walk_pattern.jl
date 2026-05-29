@@ -154,8 +154,22 @@ end
 # API — and that the regression observed via `eachchildnode` is purely a
 # matter of API surface, not of underlying capability.
 if isdefined(XML, :Tokenizer)
-    const _RAW_TOK_TEXT = XML.XMLTokenizer.TOKEN_TEXT
-    const _RAW_TOK_CDATA = XML.XMLTokenizer.TOKEN_CDATA_CONTENT
+    # Token-kind adapter — bridges the v0.4 API rename (commit 60725db, May 2026):
+    #   old (≤ e7e21a7): XML.XMLTokenizer.TOKEN_OPEN_TAG       (flat @enum constants)
+    #   new (≥ e532a28): XML.XMLTokenizer.TokenKinds.OPEN_TAG  (namespaced, TOKEN_ prefix dropped)
+    # Keeps techniques 5/6 runnable against both APIs so the bench stays reproducible.
+    const _XT = XML.XMLTokenizer
+    _kind(nm::Symbol) = isdefined(_XT, :TokenKinds) ? getfield(_XT.TokenKinds, nm) : getfield(_XT, Symbol(:TOKEN_, nm))
+    const K_TEXT          = _kind(:TEXT)
+    const K_OPEN_TAG      = _kind(:OPEN_TAG)
+    const K_CLOSE_TAG     = _kind(:CLOSE_TAG)
+    const K_TAG_CLOSE     = _kind(:TAG_CLOSE)
+    const K_SELF_CLOSE    = _kind(:SELF_CLOSE)
+    const K_CDATA_OPEN    = _kind(:CDATA_OPEN)
+    const K_CDATA_CONTENT = _kind(:CDATA_CONTENT)
+    const K_CDATA_CLOSE   = _kind(:CDATA_CLOSE)
+    const _RAW_TOK_TEXT = K_TEXT
+    const _RAW_TOK_CDATA = K_CDATA_CONTENT
     function walk_raw_tokenizer_dfs(data::AbstractString, acc::Ref{Int})
         tokenizer = XML.Tokenizer(data, 1)
         result = iterate(tokenizer)
@@ -200,8 +214,8 @@ if isdefined(XML, :Tokenizer)
                 result === nothing && return
                 token, state = result
                 k = token.kind
-                k === XML.XMLTokenizer.TOKEN_SELF_CLOSE && return
-                k === XML.XMLTokenizer.TOKEN_TAG_CLOSE && break
+                k === K_SELF_CLOSE && return
+                k === K_TAG_CLOSE && break
             end
         end
 
@@ -211,22 +225,22 @@ if isdefined(XML, :Tokenizer)
             result === nothing && return
             token, state = result
             k = token.kind
-            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+            if k === K_OPEN_TAG
                 child = XML.LazyNode(data, token, XML.Element)
                 walk_raw_tokenizer_recursive(child, acc)
                 # Skip this subtree in the parent tokenizer
                 state = _skip_subtree_synth!(tokenizer, state)
-            elseif k === XML.XMLTokenizer.TOKEN_TEXT
+            elseif k === K_TEXT
                 child = XML.LazyNode(data, token, XML.Text)
                 v = XML.value(child)
                 v !== nothing && (acc[] += length(v))
-            elseif k === XML.XMLTokenizer.TOKEN_CDATA_OPEN
+            elseif k === K_CDATA_OPEN
                 child = XML.LazyNode(data, token, XML.CData)
                 v = XML.value(child)
                 v !== nothing && (acc[] += length(v))
                 state = _skip_until_synth!(tokenizer, state,
-                                           XML.XMLTokenizer.TOKEN_CDATA_CLOSE)
-            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+                                           K_CDATA_CLOSE)
+            elseif k === K_CLOSE_TAG
                 return
             end
         end
@@ -239,12 +253,12 @@ if isdefined(XML, :Tokenizer)
             result === nothing && return state
             token, state = result
             k = token.kind
-            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+            if k === K_OPEN_TAG
                 depth += 1
-            elseif k === XML.XMLTokenizer.TOKEN_SELF_CLOSE
+            elseif k === K_SELF_CLOSE
                 depth -= 1
                 depth == 0 && return state
-            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+            elseif k === K_CLOSE_TAG
                 depth -= 1
                 if depth == 0
                     result = iterate(tokenizer, state)

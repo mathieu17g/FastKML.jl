@@ -93,6 +93,20 @@ if isdefined(XML, :eachchildnode)
 end
 
 if isdefined(XML, :Tokenizer)
+    # Token-kind adapter — bridges the v0.4 API rename (commit 60725db, May 2026):
+    #   old (≤ e7e21a7): XML.XMLTokenizer.TOKEN_OPEN_TAG       (flat @enum constants)
+    #   new (≥ e532a28): XML.XMLTokenizer.TokenKinds.OPEN_TAG  (namespaced, TOKEN_ prefix dropped)
+    # Keeps tech 5/6 runnable against both APIs so the bench stays reproducible.
+    const _XT = XML.XMLTokenizer
+    _kind(nm::Symbol) = isdefined(_XT, :TokenKinds) ? getfield(_XT.TokenKinds, nm) : getfield(_XT, Symbol(:TOKEN_, nm))
+    const K_OPEN_TAG    = _kind(:OPEN_TAG)
+    const K_CLOSE_TAG   = _kind(:CLOSE_TAG)
+    const K_TAG_CLOSE   = _kind(:TAG_CLOSE)
+    const K_SELF_CLOSE  = _kind(:SELF_CLOSE)
+    const K_TEXT        = _kind(:TEXT)
+    const K_CDATA_OPEN  = _kind(:CDATA_OPEN)
+    const K_CDATA_CLOSE = _kind(:CDATA_CLOSE)
+
     # Advance-only tech 6: recursive walk WITHOUT XML.value() calls
     # (still allocates a LazyNode per child — that cost is intrinsic to tech 6)
     function walk6_advance_only(node::XML.LazyNode, acc::Ref{Int})
@@ -109,8 +123,8 @@ if isdefined(XML, :Tokenizer)
                 result === nothing && return
                 token, state = result
                 k = token.kind
-                k === XML.XMLTokenizer.TOKEN_SELF_CLOSE && return
-                k === XML.XMLTokenizer.TOKEN_TAG_CLOSE && break
+                k === K_SELF_CLOSE && return
+                k === K_TAG_CLOSE && break
             end
         end
 
@@ -119,18 +133,18 @@ if isdefined(XML, :Tokenizer)
             result === nothing && return
             token, state = result
             k = token.kind
-            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+            if k === K_OPEN_TAG
                 child = XML.LazyNode(data, token, XML.Element)
                 walk6_advance_only(child, acc)
                 state = _skip_subtree_synth!(tokenizer, state)
-            elseif k === XML.XMLTokenizer.TOKEN_TEXT
+            elseif k === K_TEXT
                 # No XML.value() call — just count the kind hit
                 acc[] += 1
-            elseif k === XML.XMLTokenizer.TOKEN_CDATA_OPEN
+            elseif k === K_CDATA_OPEN
                 acc[] += 1
                 state = _skip_until_synth!(tokenizer, state,
-                                           XML.XMLTokenizer.TOKEN_CDATA_CLOSE)
-            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+                                           K_CDATA_CLOSE)
+            elseif k === K_CLOSE_TAG
                 return
             end
         end
@@ -152,8 +166,8 @@ if isdefined(XML, :Tokenizer)
                 result === nothing && return
                 token, state = result
                 k = token.kind
-                k === XML.XMLTokenizer.TOKEN_SELF_CLOSE && return
-                k === XML.XMLTokenizer.TOKEN_TAG_CLOSE && break
+                k === K_SELF_CLOSE && return
+                k === K_TAG_CLOSE && break
             end
         end
 
@@ -162,21 +176,21 @@ if isdefined(XML, :Tokenizer)
             result === nothing && return
             token, state = result
             k = token.kind
-            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+            if k === K_OPEN_TAG
                 child = XML.LazyNode(data, token, XML.Element)
                 walk6_full(child, acc)
                 state = _skip_subtree_synth!(tokenizer, state)
-            elseif k === XML.XMLTokenizer.TOKEN_TEXT
+            elseif k === K_TEXT
                 child = XML.LazyNode(data, token, XML.Text)
                 v = XML.value(child)
                 v !== nothing && (acc[] += length(v))
-            elseif k === XML.XMLTokenizer.TOKEN_CDATA_OPEN
+            elseif k === K_CDATA_OPEN
                 child = XML.LazyNode(data, token, XML.CData)
                 v = XML.value(child)
                 v !== nothing && (acc[] += length(v))
                 state = _skip_until_synth!(tokenizer, state,
-                                           XML.XMLTokenizer.TOKEN_CDATA_CLOSE)
-            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+                                           K_CDATA_CLOSE)
+            elseif k === K_CLOSE_TAG
                 return
             end
         end
@@ -189,12 +203,12 @@ if isdefined(XML, :Tokenizer)
             result === nothing && return state
             token, state = result
             k = token.kind
-            if k === XML.XMLTokenizer.TOKEN_OPEN_TAG
+            if k === K_OPEN_TAG
                 depth += 1
-            elseif k === XML.XMLTokenizer.TOKEN_SELF_CLOSE
+            elseif k === K_SELF_CLOSE
                 depth -= 1
                 depth == 0 && return state
-            elseif k === XML.XMLTokenizer.TOKEN_CLOSE_TAG
+            elseif k === K_CLOSE_TAG
                 depth -= 1
                 if depth == 0
                     result = iterate(tokenizer, state)
@@ -211,6 +225,33 @@ if isdefined(XML, :Tokenizer)
             token, state = result
             token.kind === target_kind && return state
         end
+    end
+end
+
+# ── tech 7 walker: children!() reused buffer (the δ direction, v0.4 only) ──
+#
+# δ = "poolable / pre-allocable child collection". One Vector{LazyNode}
+# buffer per depth level, reused across every sibling group at that depth.
+# Saves the per-call Vector allocation that plain children() pays, but still
+# materializes one LazyNode per child. Tests #61's "δ insufficient alone" claim.
+if isdefined(XML, :children!)
+    function walk7_full(node::XML.LazyNode{String}, acc::Ref{Int},
+                        pool::Vector{Vector{XML.LazyNode{String}}}, depth::Int)
+        depth > length(pool) && push!(pool, XML.LazyNode{String}[])
+        buf = pool[depth]
+        empty!(buf)                       # ensure no carry-over from a prior sibling group
+        XML.children!(buf, node)
+        for i in eachindex(buf)
+            child = buf[i]
+            nt = XML.nodetype(child)
+            if nt === XML.Element
+                walk7_full(child, acc, pool, depth + 1)
+            elseif nt === XML.Text || nt === XML.CData
+                v = XML.value(child)
+                v !== nothing && (acc[] += length(v))
+            end
+        end
+        nothing
     end
 end
 
@@ -261,6 +302,13 @@ if isdefined(XML, :eachchildnode)
     println("\n== Technique 3 (eachchildnode) ==")
     lazy_root_3 = parse(str, XML.LazyNode)
     t3_full = measure("walk-only full", :(walk3_full($lazy_root_3, Ref(0))))
+end
+
+if isdefined(XML, :children!)
+    println("\n== Technique 7 (children!() reused buffer — δ direction) ==")
+    lazy_root_7 = parse(str, XML.LazyNode)
+    t7_full = measure("walk-only full",
+                      :(walk7_full($lazy_root_7, Ref(0), Vector{XML.LazyNode{String}}[], 1)))
 end
 
 if isdefined(XML, :Tokenizer)
