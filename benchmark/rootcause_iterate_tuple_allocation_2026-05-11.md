@@ -1,7 +1,9 @@
-# POC — FastKML lazy walker using v0.4 private Tokenizer API
+# Root-cause analysis of the per-iterate Tuple allocation (FastKML raw-Tokenizer PoC)
 
 Run date: 2026-05-11
 Branch: `wip-xml-v0.4`. Tested in working tree; **not committed to src/macros.jl** (reverted to `eachchildnode` after measurement).
+
+> This file started as a PoC ("can FastKML adopt the raw v0.4 `Tokenizer` directly?") and the negative result led to the per-iterate `Tuple` allocation root-cause analysis it's now cited for. The PoC iterations below are the methodology; the diagnosis in "Issue candidate B" is the load-bearing result.
 
 ## Hypothesis
 
