@@ -8,6 +8,30 @@ completed milestones. For released changes, see
 
 ## Active items
 
+> **RESUME HERE — 2026-05-21.** Upstream "Phase C" is **done and posted**:
+> the streaming-primitive issue is live as
+> [JuliaComputing/XML.jl#61](https://github.com/JuliaComputing/XML.jl/issues/61),
+> with companion comments on PRs #54 / #58 / #59. It shipped a *reframed*
+> design — two-layer StAX (iterator-based `Tokenizer` + cursor-based
+> `CursorNode`), **with a recommendation** — not the 4-open-options
+> (α/β/γ/δ) framing the Phase C plan below describes. The planned
+> children()-regression "Issue B" was **folded into #61 + the PR #58
+> comment**, not filed separately. Full executed state in the archive
+> entry "Upstream Phase C — issues posted (2026-05-20)".
+>
+> ⚠️ **Naming clash**: "Issue B" in the Phase C plan = the `children()`
+> regression. It is **unrelated** to the UTF-16-input bug (also nicknamed
+> "Issue B" in a later session), which was filed from a different package
+> and has no FastKML footprint.
+>
+> **Next trigger is external** — joshday's response on #61, or PR #54
+> merging. PR #54 is still active: head advanced `e7e21a7` → `e532a28`
+> (+10 commits) by 2026-05-21, so the "stay / keep anticipating"
+> criterion below holds. The v0.4 migration stays gated on (a) #54
+> merging and (b) a streaming primitive landing. The `dev/XML.jl-v0.4/`
+> clone stays pinned at `e7e21a7` for bench reproducibility — do not
+> bump it without re-running the 3-way bench.
+
 ### Migration v0.4 — anticipée sur cette branche `wip-xml-v0.4`
 
 **Finalité** : être *day-zero ready* lors du merge de
@@ -95,7 +119,7 @@ L'estimation initiale -25-35% wall-clock était basée sur les benchmarks PARSE 
 
 **Conséquence** : `wip-xml-v0.4` reste **fonctionnellement correct** (577/577 tests) mais **PAS perf-cible**. `wip-xml-next-bang-adoption` reste la baseline performante.
 
-#### Phase C — bench complet + 2 issues prêtes à rédiger (RESUME HERE 2026-05-11)
+#### Phase C — bench + upstream issues — ✅ DONE 2026-05-20 (issues posted; see status block at top of Active items + archive). Bench tables below kept as reference data.
 
 **État** : 2 benchs reproductibles capturés. Phase B (eachchildnode adoption) sur wip-xml-v0.4 (`964feab`). Tout commité.
 
@@ -143,7 +167,16 @@ Sur N=100k placemarks synthétiques :
 4. **v0.4 `eachchildnode` ≠ alternative à `next!`** : marginal vs `children()` (-6% mem, +3% temps). Pas la classe perf de #59.
 5. **Net** : v0.3+#59 best path → v0.4 best path = **×6 plus lent, ×10 plus de mémoire**.
 
-##### Plan 2 issues distinctes — à rédiger
+##### Plan 2 issues distinctes — ✅ POSTED 2026-05-20 (executed version differs from this plan)
+
+> What actually shipped: **a single issue** —
+> [#61](https://github.com/JuliaComputing/XML.jl/issues/61), the streaming
+> primitive, reframed around a two-layer StAX design **with a
+> recommendation** (not the α/β/γ/δ open-questions framing planned below;
+> the PoC/failed-attempt narrative was set aside as it weakened the
+> argument). The planned "Issue B" (children() regression) was **not
+> filed separately** — folded into #61's body and the PR #58 comment. The
+> original plan is kept below for the record.
 
 **Issue A** — `Streaming walk primitive for LazyNode (regression vs PR #59 next!())` :
 - Headline : "v0.4 lacks the O(1)-allocation walk pattern that PR #59 demonstrated on v0.3"
@@ -649,6 +682,33 @@ the macro itself (done in `src/macros.jl`'s docstring).
 ---
 
 ## Done — milestones (archive)
+
+### Upstream Phase C — issues posted — 2026-05-20
+
+Opened [JuliaComputing/XML.jl#61](https://github.com/JuliaComputing/XML.jl/issues/61)
+("A StAX-style streaming primitive for v0.4 — recovering FastKML's lazy
+walk class without the LazyNode-as-cursor hack") + companion comments on
+PRs #54, #58, #59.
+
+Diverged from the Phase C plan in two ways worth recording:
+- **One issue, not two.** The planned "Issue B" (children() regression vs
+  PR #58) was folded into #61's body + the PR #58 comment rather than
+  filed separately.
+- **Reframed, not 4-open-options.** #61 argues a *two-layer StAX design*
+  (iterator-based `Tokenizer` + cursor-based `CursorNode`) with a
+  recommendation, informed by a SOTA survey of 9 streaming parsers
+  (`notes/upstream_issues/streaming_parser_research.md`). The α/β/γ/δ
+  open-questions framing and the failed-PoC narrative were dropped.
+- Supporting artefacts on `wip-xml-v0.4`: `streaming_parser_research.md`,
+  `benchmark/walk_pattern_env/` (synth bench + `decompose_techniques.jl`),
+  `benchmark/rootcause_iterate_tuple_allocation_2026-05-11.md` (renamed
+  from `poc_fastkml_raw_tokenizer_*`), `results_eager_vs_lazy_3way_*`.
+- Cross-package signal: @TimG1964 (XLSX.jl) had flagged the `next`/`prev`
+  removal on PR #54 in March 2026 — cited in #61 as an isomorphic use case.
+
+Branches pushed public for the issue's permalinks: `wip-xml-v0.4` +
+`wip-xml-next-bang-adoption` (FastKML), `dev-combined` (mathieu17g/XML.jl,
+= v0.3.8 + #58 + #59).
 
 ### OGC 2.2 + Google `gx:` completeness sweep — closed 2026-05-08
 
