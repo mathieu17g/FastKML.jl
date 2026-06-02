@@ -13,7 +13,7 @@ import ..HtmlEntities: decode_named_entities
 import ..Coordinates: parse_coordinates_automa
 import ..TimeParsing: parse_iso8601
 import ..Utils: unwrap_single_part_multigeometry
-import XML: XML, parse, Node, LazyNode, tag, children, attributes
+import XML: XML, parse, Node, LazyNode, tag, children, attributes, Cursor, next!, @for_each_child
 using StaticArrays
 using Base.Iterators: flatten
 using TimeZones, Dates
@@ -63,6 +63,202 @@ Base.iterate(iter::EagerLazyPlacemarkIterator, state = 1) =
 Base.length(iter::EagerLazyPlacemarkIterator) = length(iter.placemarks)
 Base.IteratorSize(::Type{EagerLazyPlacemarkIterator}) = Base.HasLength()
 Base.eltype(::Type{EagerLazyPlacemarkIterator}) = eltype(fieldtype(EagerLazyPlacemarkIterator, :placemarks))
+
+# ===== Cursor-backed collection (XML.Cursor, allocation-free token walk) =====
+# Mirrors the EagerLazyPlacemarkIterator path but drives a single forward
+# `XML.Cursor` over the layer's subtree instead of re-tokenizing per LazyNode.
+# The `@for_each_child` macro inlines each loop body (no closure), so the
+# field-accumulating loops don't box captured locals. Extraction is INLINE:
+# where the LazyNode path does `@find_immediate_child … then extract`, the
+# cursor extracts the moment it is positioned on the target (it cannot revisit).
+const _PM_ROW = NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}
+
+struct CursorPlacemarkIterator
+    placemarks::Vector{_PM_ROW}
+
+    function CursorPlacemarkIterator(source::LazyNode)
+        placemarks = Vector{_PM_ROW}()
+        sizehint!(placemarks, 1000)
+        c = Cursor(source)        # cursor positioned at the layer container
+        next!(c)                  # land on `source` (depth 1)
+        _cursor_collect_placemarks!(placemarks, c)
+        sizehint!(placemarks, length(placemarks))
+        new(placemarks)
+    end
+end
+
+Base.iterate(it::CursorPlacemarkIterator, state = 1) =
+    state > length(it.placemarks) ? nothing : (it.placemarks[state], state + 1)
+Base.length(it::CursorPlacemarkIterator) = length(it.placemarks)
+Base.IteratorSize(::Type{CursorPlacemarkIterator}) = Base.HasLength()
+Base.eltype(::Type{CursorPlacemarkIterator}) = _PM_ROW
+
+# Element text content, cursor analogue of extract_text_content_fast: descend into
+# the current element and concatenate its Text/CData children (fast-path single).
+function _cursor_text(c::Cursor)::String
+    found = nothing
+    extras = nothing
+    @for_each_child c ch begin
+        nt = XML.nodetype(ch)
+        if nt === XML.Text || nt === XML.CData
+            tv = XML.value(ch)
+            if tv !== nothing
+                s = String(tv)
+                if found === nothing
+                    found = s
+                elseif extras === nothing
+                    extras = String[found, s]
+                else
+                    push!(extras, s)
+                end
+            end
+        end
+    end
+    return extras !== nothing ? join(extras) : (found !== nothing ? found : "")
+end
+
+function _cursor_parse_linear_ring(c::Cursor)
+    coords = nothing
+    @for_each_child c ch begin
+        if XML.nodetype(ch) === XML.Element && tag(ch) == "coordinates"
+            cs = parse_coordinates_automa(_cursor_text(ch))
+            coords = isempty(cs) ? nothing : cs
+        end
+    end
+    return LinearRing(; coordinates = coords)
+end
+
+function _cursor_parse_geometry(c::Cursor, geom_tag)
+    if geom_tag == "Point"
+        coord = nothing
+        @for_each_child c ch begin
+            if XML.nodetype(ch) === XML.Element && tag(ch) == "coordinates"
+                cs = parse_coordinates_automa(_cursor_text(ch))
+                isempty(cs) || (coord = cs[1])
+            end
+        end
+        return coord === nothing ? Point(; coordinates = nothing) : Point(; coordinates = coord)
+
+    elseif geom_tag == "LineString"
+        coords = nothing
+        @for_each_child c ch begin
+            if XML.nodetype(ch) === XML.Element && tag(ch) == "coordinates"
+                cs = parse_coordinates_automa(_cursor_text(ch))
+                coords = isempty(cs) ? nothing : cs
+            end
+        end
+        return LineString(; coordinates = coords)
+
+    elseif geom_tag == "Polygon"
+        outer_ring = nothing
+        inner_rings = LinearRing[]
+        @for_each_child c ch begin
+            if XML.nodetype(ch) === XML.Element
+                ct = tag(ch)
+                if ct == "outerBoundaryIs"
+                    @for_each_child c bch begin
+                        if XML.nodetype(bch) === XML.Element && tag(bch) == "LinearRing"
+                            outer_ring = _cursor_parse_linear_ring(bch)
+                        end
+                    end
+                elseif ct == "innerBoundaryIs"
+                    @for_each_child c bch begin
+                        if XML.nodetype(bch) === XML.Element && tag(bch) == "LinearRing"
+                            ring = _cursor_parse_linear_ring(bch)
+                            if ring !== nothing && ring.coordinates !== nothing && !isempty(ring.coordinates)
+                                push!(inner_rings, ring)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if outer_ring !== nothing
+            return Polygon(; outerBoundaryIs = outer_ring, innerBoundaryIs = isempty(inner_rings) ? nothing : inner_rings)
+        else
+            return Polygon(; outerBoundaryIs = LinearRing())
+        end
+
+    elseif geom_tag == "MultiGeometry"
+        geometries = Geometry[]
+        @for_each_child c ch begin
+            if XML.nodetype(ch) === XML.Element
+                ct = tag(ch)
+                if ct in ("Point", "LineString", "Polygon", "MultiGeometry", "gx:Track")
+                    g = _cursor_parse_geometry(c, ct)
+                    ismissing(g) || push!(geometries, g)
+                end
+            end
+        end
+        return MultiGeometry(; Geometries = isempty(geometries) ? nothing : geometries)
+
+    elseif geom_tag == "gx:Track"
+        when_vals = Union{TimeZones.ZonedDateTime,Dates.Date,String}[]
+        coord_vals = Coord3[]
+        @for_each_child c ch begin
+            if XML.nodetype(ch) === XML.Element
+                ct = tag(ch)
+                if ct == "when"
+                    push!(when_vals, parse_iso8601(_cursor_text(ch); warn = false))
+                elseif ct == "gx:coord"
+                    cs = parse_coordinates_automa(_cursor_text(ch))
+                    if !isempty(cs)
+                        cc = cs[1]
+                        push!(coord_vals, length(cc) == 3 ? Coord3(cc) : Coord3(cc[1], cc[2], 0.0))
+                    end
+                end
+            end
+        end
+        isempty(when_vals) && isempty(coord_vals) && return missing
+        return gx_Track(
+            when     = isempty(when_vals)  ? nothing : when_vals,
+            gx_coord = isempty(coord_vals) ? nothing : coord_vals,
+        )
+    end
+    return missing
+end
+
+function _cursor_extract_placemark(c::Cursor)
+    name = ""
+    description = ""
+    geometry = missing
+    has_name = false
+    has_description = false
+    has_geometry = false
+    @for_each_child c ch begin
+        if XML.nodetype(ch) === XML.Element
+            ct = tag(ch)
+            if ct == "name" && !has_name
+                name = _cursor_text(ch)
+                if occursin('&', name)
+                    name = decode_named_entities(name)
+                end
+                has_name = true
+            elseif ct == "description" && !has_description
+                description = _cursor_text(ch)
+                has_description = true
+            elseif !has_geometry && ct in ("Point", "LineString", "Polygon", "MultiGeometry", "gx:Track")
+                geometry = _cursor_parse_geometry(c, ct)
+                has_geometry = true
+            end
+        end
+    end
+    return (name = name, description = description, geometry = geometry)
+end
+
+function _cursor_collect_placemarks!(rows::Vector{_PM_ROW}, c::Cursor)
+    @for_each_child c ch begin
+        if XML.nodetype(ch) === XML.Element
+            ct = tag(ch)
+            if ct == "Placemark"
+                push!(rows, _cursor_extract_placemark(c))
+            elseif ct == "Document" || ct == "Folder"
+                _cursor_collect_placemarks!(rows, c)
+            end
+        end
+    end
+    return rows
+end
 
 #─────────────────────────────────────────────────────────────────────────────────────#
 
