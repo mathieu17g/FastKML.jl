@@ -227,6 +227,29 @@ function table_with_fastkml(path; layer::Union{Nothing,Integer} = nothing)
 end
 
 """
+    table_with_fastkml_cursor(path; layer = nothing)
+
+Cursor-backed counterpart of [`table_with_fastkml`](@ref): collects each layer's
+placemarks by driving a single forward `XML.Cursor` over the layer subtree
+(`FastKML.TablesBridge.CursorPlacemarkIterator`) instead of the LazyNode
+tree-recursion. Same per-layer loop + `vcat`. Measures whether the bitstype-Token
+cursor walk (Phase 2/3) translates to a gain on the real table path.
+"""
+function table_with_fastkml_cursor(path; layer::Union{Nothing,Integer} = nothing)
+    file = read(path, FastKML.LazyKMLFile)
+    _layer_rows(k) =
+        DataFrame(collect(FastKML.TablesBridge.CursorPlacemarkIterator(FastKML.Layers.select_layer(file, k))))
+    if layer !== nothing
+        return _layer_rows(layer)
+    end
+    n = FastKML.get_num_layers(file)
+    n == 0 && return DataFrame()
+    n == 1 && return _layer_rows(1)
+    dfs = [_layer_rows(k) for k in 1:n]
+    return vcat(dfs...; cols = :union)
+end
+
+"""
     table_with_fastkml_eager(path; layer = nothing)
 
 Eager-mode counterpart of [`table_with_fastkml`](@ref): parses the file into
