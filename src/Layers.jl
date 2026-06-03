@@ -45,6 +45,22 @@ end
 # Lazy (LazyKMLFile) helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Lazy locate: walk the document with a Cursor and stop at the first <kml> Element.
+# `@find_immediate_child` (eachchildnode) cannot be used here: its iterator calls a
+# *tokenizing* `_lazy_skip_element!` the moment it yields <kml>, to pre-position on
+# the next sibling — so it tokenizes <kml>'s entire subtree (~60 ms on WRS-2's 28k
+# Placemarks) before the caller can `break` on the match. The Cursor's `next!` is DFS:
+# it yields <kml>'s OPEN_TAG first, so we return at the open tag without descending.
+function _find_kml_element(doc::XML.LazyNode)
+    c = Cursor(doc)
+    while next!(c) !== nothing
+        XML.nodetype(c) === XML.Element && tag(c) == "kml" && return LazyNode(c)
+    end
+    error("No <kml> tag found in LazyKMLFile")
+end
+
+# Eager / generic fallback (unchanged behaviour; the lazy method above is preferred
+# by dispatch for LazyNode, which is the only type the layer code passes in practice).
 function _find_kml_element(doc::XMLAnyNode)
     kml_elem = @find_immediate_child doc child (tag(child) == "kml")
     isnothing(kml_elem) && error("No <kml> tag found in LazyKMLFile")
