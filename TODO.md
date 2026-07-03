@@ -10,18 +10,16 @@ completed milestones. For released changes, see
 
 > **RESUME HERE — 2026-07-03.** **XML.jl v0.4.0 est enregistré et publié**
 > ([release](https://github.com/JuliaData/XML.jl/releases/tag/v0.4.0)) et la
-> migration FastKML est **terminée sur cette branche** : PR #1 (`wip-xml-v0.4`
-> → `main`) est MERGEABLE — `[sources]` dev-pin supprimé (compat `XML = "0.4"`,
-> résolution registre), `CI.yml` ajouté (run `main` vert), historique purgé de
-> `notes/`, `benchmark/` élagué de l'ère d'investigation. Re-bench 07-03 : le
-> chemin cursor bat ArchGDAL 4/4 —
+> migration FastKML est **mergée dans `main`** (PR #1, 2026-07-03) : compat
+> `XML = "0.4"` résolu depuis le registre (dev-pin `[sources]` supprimé),
+> `CI.yml` en place, historique purgé de `notes/`, `benchmark/` élagué.
+> Re-bench 07-03 : le chemin cursor bat ArchGDAL 4/4 —
 > `benchmark/results_2026-07-03_xml-v04-tip_rebench.md`. Détail complet dans
 > l'archive « Migration XML.jl v0.4 — SHIPPED ».
 >
 > **Next :**
-> 1. Merger PR #1.
-> 2. Dérouler « Release readiness » (ci-dessous) — la pré-condition XML est levée.
-> 3. Veille upstream : XML v0.5 (flat node store prototypé — build ~2× plus
+> 1. Dérouler « Release readiness » (ci-dessous) — la pré-condition XML est levée.
+> 2. Veille upstream : XML v0.5 (flat node store prototypé — build ~2× plus
 >    rapide), `hash(::Node)` ([XML.jl#55](https://github.com/JuliaData/XML.jl/issues/55)),
 >    XLSX v0.12.0 (adoption jumelle).
 
