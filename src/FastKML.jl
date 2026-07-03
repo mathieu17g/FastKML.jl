@@ -62,7 +62,7 @@ end
 
 Base.iterate(k::KMLFile, state...) = iterate(k.children, state...)
 Base.length(k::KMLFile) = length(k.children)
-Base.eltype(::Type{KMLFile}) = Union{XML.AbstractXMLNode, KMLElement}
+Base.eltype(::Type{KMLFile}) = Union{XMLAnyNode, KMLElement}
 Base.getindex(k::KMLFile, i) = k.children[i]
 Base.firstindex(k::KMLFile) = 1
 Base.lastindex(k::KMLFile) = length(k.children)

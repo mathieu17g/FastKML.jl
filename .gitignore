@@ -8,6 +8,10 @@ docs/build/
 # preparing PRs against (e.g. XML.jl via [sources] in benchmark/Project.toml).
 # Wipe once the upstream PR is merged or abandoned.
 dev/
+# Local scratch for drafting upstream (XML.jl) issue/PR/comment text + design notes.
+# Kept on disk for copy-paste convenience but NOT tracked — committing these just churns
+# FastKML history with upstream coordination noise (and git rm never erases that history).
+notes/upstream_issues/
 # Cached XSDs downloaded by tools/audit_kml_coverage.jl (re-fetched on demand
 # via --refresh; not committed since they can change upstream).
 tools/.xsd_cache/

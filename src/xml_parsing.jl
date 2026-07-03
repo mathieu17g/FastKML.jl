@@ -5,7 +5,7 @@ export object, extract_text_content_fast
 using TimeZones
 using Dates
 import XML
-import ..Types: KMLElement, TAG_TO_TYPE, typemap, KMLFile, NoAttributes, tagsym
+import ..Types: KMLElement, TAG_TO_TYPE, typemap, KMLFile, NoAttributes, tagsym, XMLAnyNode
 import ..Types  # Import all types
 import ..Enums
 import ..FieldConversion: assign_field!, assign_complex_object!, handle_polygon_boundary!
@@ -15,7 +15,7 @@ import ..Coordinates: coordinate_string
 # ─── Text extraction ─────────────────────────────────────────────────────────
 
 """
-    extract_text_content_fast(node::XML.AbstractXMLNode) -> String
+    extract_text_content_fast(node::XMLAnyNode) -> String
 
 Extracts and concatenates the text content from the immediate children of a given XML node.
 
@@ -24,7 +24,7 @@ XML Text (`XML.Text`) or CData (`XML.CData`) node, its string value is collected
 All collected text values are then joined together. If no text content is found
 among the immediate children, or if all text values are `nothing`, an empty string is returned.
 """
-function extract_text_content_fast(node::XML.AbstractXMLNode)
+function extract_text_content_fast(node::XMLAnyNode)
     # Fast path: most KML elements have either no Text/CData child or a
     # single one (e.g. <name>FOO</name>, <description><![CDATA[…]]></description>).
     # For that common case we avoid allocating a `Vector{String}` and the
@@ -56,12 +56,12 @@ function extract_text_content_fast(node::XML.AbstractXMLNode)
 end
 
 # ─── Parse KMLFile from XML document ─────────────────────────────────────────
-function parse_kmlfile(doc::XML.AbstractXMLNode)
+function parse_kmlfile(doc::XMLAnyNode)
     kml_element = @find_immediate_child doc x (XML.nodetype(x) === XML.Element && XML.tag(x) == "kml")
     isnothing(kml_element) && error("No <kml> tag found in file.")
     
     # Only process element nodes
-    kml_children = Vector{Union{XML.AbstractXMLNode,KMLElement}}()
+    kml_children = Vector{Union{XMLAnyNode,KMLElement}}()
     @for_each_immediate_child kml_element child_node begin
         if XML.nodetype(child_node) === XML.Element
             parsed = object(child_node)
@@ -91,7 +91,7 @@ const ENUM_NAMES_SET = Set(names(Enums; all = true))
 """
 Main entry point for parsing XML nodes into KML objects.
 """
-function object(node::XML.AbstractXMLNode)
+function object(node::XMLAnyNode)
     # Assuming 'node' is always an XML.Element when object() is called for KML types
     sym = tagsym(XML.tag(node))
 
@@ -171,7 +171,7 @@ const KML_NAMES_SET = let
     all_names
 end
 
-function _object_slow(node::XML.AbstractXMLNode)
+function _object_slow(node::XMLAnyNode)
     original_tag_name = XML.tag(node)
     sym = tagsym(original_tag_name)
 
@@ -213,7 +213,7 @@ function _object_slow(node::XML.AbstractXMLNode)
 end
 
 # ─── Element addition ────────────────────────────────────────────────────────
-function add_element!(parent::KMLElement, child_xml_node::XML.AbstractXMLNode)
+function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
     child_parsed_val = object(child_xml_node)
 
     if child_parsed_val isa KMLElement
@@ -252,9 +252,9 @@ end
 
 # ─── Helper functions ────────────────────────────────────────────────────────
 
-tagsym(x::XML.AbstractXMLNode) = tagsym(XML.tag(x))
+tagsym(x::XMLAnyNode) = tagsym(XML.tag(x))
 
-function add_attributes!(o::KMLElement, source::XML.AbstractXMLNode)
+function add_attributes!(o::KMLElement, source::XMLAnyNode)
     attr = XML.attributes(source)
     isnothing(attr) && return
 

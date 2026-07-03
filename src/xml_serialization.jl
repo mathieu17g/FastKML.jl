@@ -2,102 +2,126 @@ module XMLSerialization
 
 export Node, to_xml, xml_children
 
-using OrderedCollections: OrderedDict
 import XML
-import ..Types: KMLElement, KMLFile, LazyKMLFile, Document
+import ..Types: KMLElement, KMLFile, LazyKMLFile, Document, XMLAnyNode
 import ..Enums
 import ..Coordinates: coordinate_string
 
 # ─── Type tag mapping ────────────────────────────────────────────────────────
 typetag(T::Type) = replace(string(nameof(T)), "_" => ":")
 
-# ─── KMLElement → Node conversion ────────────────────────────────────────────
-Node(o::T) where {T<:Enums.AbstractKMLEnum} = XML.Node(XML.Element, typetag(T), nothing, nothing, [XML.Node(XML.Text, nothing, nothing, o.value, XML.Node[])])
+# ─── v0.4 helpers ────────────────────────────────────────────────────────────
+# In XML.jl v0.4, `Node{S}` is parameterized by storage type, and:
+# - `attributes` is `Union{Nothing, Vector{Pair{S,S}}}` (was OrderedDict-like).
+# - "leaf" node types (Text, CData, Comment, DTD, ProcessingInstruction,
+#   Declaration) require `children = nothing` (not an empty vector — the v0.4
+#   constructor validates this strictly).
+# All FastKML serialization uses `S = String`. The aliases below keep call
+# sites compact.
+const FNode = XML.Node{String}
+const Attrs = Union{Nothing, Vector{Pair{String, String}}}
 
-function Node(o::T) where {names,T<:KMLElement{names}}
-    tag = typetag(T)
-    
-    attributes = Dict(string(k) => string(getfield(o, k)) for k in names if !isnothing(getfield(o, k)))
-    element_fields = filter(x -> !isnothing(getfield(o, x)), setdiff(fieldnames(T), names))
-    
-    if isempty(element_fields)
-        return XML.Node(XML.Element, tag, attributes, nothing, XML.Node[])
+function _build_attrs(o::T) where {names, T<:KMLElement{names}}
+    pairs = Pair{String, String}[]
+    for k in names
+        v = getfield(o, k)
+        v === nothing && continue
+        push!(pairs, string(k) => string(v))
     end
-    
-    children = XML.Node[]
+    isempty(pairs) ? nothing : pairs
+end
+
+# ─── KMLElement → Node conversion ────────────────────────────────────────────
+Node(o::T) where {T<:Enums.AbstractKMLEnum} = FNode(
+    XML.Element, typetag(T), nothing, nothing,
+    FNode[FNode(XML.Text, nothing, nothing, o.value, nothing)],
+)
+
+function Node(o::T) where {names, T<:KMLElement{names}}
+    tag = typetag(T)
+
+    attrs = _build_attrs(o)
+    element_fields = filter(x -> !isnothing(getfield(o, x)), setdiff(fieldnames(T), names))
+
+    if isempty(element_fields)
+        return FNode(XML.Element, tag, attrs, nothing, FNode[])
+    end
+
+    children = FNode[]
     for field in element_fields
         val = getfield(o, field)
-        
+
         # IMPORTANT: Skip nothing values - this line must be here!
-        if val === nothing
-            continue
-        end
-        
+        val === nothing && continue
+
         if field == :innerBoundaryIs
-            # Create a container element for innerBoundaryIs
-            inner_children = [Node(ring) for ring in val]
-            push!(children, XML.Node(XML.Element, "innerBoundaryIs", nothing, nothing, inner_children))
+            inner_children = FNode[Node(ring) for ring in val]
+            push!(children, FNode(XML.Element, "innerBoundaryIs", nothing, nothing, inner_children))
         elseif field == :outerBoundaryIs
-            # Create a container element for outerBoundaryIs
-            push!(children, XML.Node(XML.Element, "outerBoundaryIs", nothing, nothing, [Node(val)]))
+            push!(children, FNode(XML.Element, "outerBoundaryIs", nothing, nothing, FNode[Node(val)]))
         elseif field == :coordinates
-            # Create text node with coordinate string
-            coord_text = XML.Node(XML.Text, nothing, nothing, coordinate_string(val), XML.Node[])
-            push!(children, XML.Node(XML.Element, "coordinates", nothing, nothing, [coord_text]))
+            coord_text = FNode(XML.Text, nothing, nothing, coordinate_string(val), nothing)
+            push!(children, FNode(XML.Element, "coordinates", nothing, nothing, FNode[coord_text]))
         elseif val isa KMLElement
             push!(children, Node(val))
         elseif val isa Vector{<:KMLElement}
             append!(children, Node.(val))
         elseif val isa Enums.AbstractKMLEnum
-            # Handle enum values
             push!(children, Node(val))
         elseif val isa Vector
-            # Handle other vector types (like Vector{String})
             for item in val
                 if item isa KMLElement
                     push!(children, Node(item))
                 else
-                    text_node = XML.Node(XML.Text, nothing, nothing, string(item), XML.Node[])
-                    push!(children, XML.Node(XML.Element, string(field), nothing, nothing, [text_node]))
+                    text_node = FNode(XML.Text, nothing, nothing, string(item), nothing)
+                    push!(children, FNode(XML.Element, string(field), nothing, nothing, FNode[text_node]))
                 end
             end
         else
-            # Create text node for simple values
-            text_node = XML.Node(XML.Text, nothing, nothing, string(val), XML.Node[])
-            push!(children, XML.Node(XML.Element, string(field), nothing, nothing, [text_node]))
+            text_node = FNode(XML.Text, nothing, nothing, string(val), nothing)
+            push!(children, FNode(XML.Element, string(field), nothing, nothing, FNode[text_node]))
         end
     end
-    return XML.Node(XML.Element, tag, attributes, nothing, children)
+    return FNode(XML.Element, tag, attrs, nothing, children)
 end
 
 # ─── KMLFile → Node conversion ───────────────────────────────────────────────
 function Node(k::KMLFile)
-    children = map(k.children) do child
-        # Check KMLElement FIRST, before XML types
+    children = FNode[]
+    for child in k.children
         if child isa KMLElement
-            # Convert KML elements to Node
-            Node(child)
+            push!(children, Node(child))
         elseif child isa XML.Node
-            # Already a Node, use as is
-            child
-        elseif child isa XML.AbstractXMLNode
-            # Convert other XML nodes to Node
-            XML.Node(child)
+            # Already a Node{S} of some S — narrow/copy if needed; for now,
+            # FastKML's serialization path produces only Node{String}, so any
+            # foreign Node{T} would be unusual. Push as-is and let the caller
+            # observe the heterogeneity.
+            push!(children, child)
+        elseif child isa XMLAnyNode
+            # XML.LazyNode encountered — convert to Node{String} via tree walk.
+            # XML.jl v0.4 doesn't expose a one-shot LazyNode → Node converter
+            # in the public API; for now, materialize via a write-then-parse
+            # round-trip if this path ever fires (rare in practice — only
+            # if something stuffed a LazyNode into a KMLFile.children).
+            @warn "LazyNode in KMLFile.children — coercing via round-trip" type=typeof(child)
+            push!(children, XML.parse(sprint(io -> XML.write(io, child)), XML.Node))
         else
-            # This shouldn't happen, but log a warning
             @warn "Unexpected child type in KMLFile" type=typeof(child)
-            XML.Node(XML.Text, nothing, nothing, string(child), XML.Node[])
+            push!(children, FNode(XML.Text, nothing, nothing, string(child), nothing))
         end
     end
 
-    XML.Node(
+    decl_attrs = Pair{String, String}["version" => "1.0", "encoding" => "UTF-8"]
+    kml_attrs  = Pair{String, String}["xmlns" => "http://earth.google.com/kml/2.2"]
+
+    return FNode(
         XML.Document,
         nothing,
         nothing,
         nothing,
-        [
-            XML.Node(XML.Declaration, nothing, OrderedDict("version" => "1.0", "encoding" => "UTF-8"), nothing, XML.Node[]),
-            XML.Node(XML.Element, "kml", OrderedDict("xmlns" => "http://earth.google.com/kml/2.2"), nothing, children),
+        FNode[
+            FNode(XML.Declaration, nothing, decl_attrs, nothing, nothing),
+            FNode(XML.Element, "kml", kml_attrs, nothing, children),
         ],
     )
 end

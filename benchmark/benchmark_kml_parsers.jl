@@ -34,44 +34,70 @@ using Profile
 #  FastKML's lenient parser recovers the geometry correctly; ArchGDAL's
 #  strict-spec parser reduces each ring to a single point. Documented in
 #  docs/src/coordinate_parsing.md as a known KML interoperability issue.
+#  Structure: 20 Placemarks each aggregating many Polygons via
+#  MultiGeometry (~24 300 Polygons / ~541 MultiGeometry / ~24 900
+#  LinearRings, ≈1 215 Polygons per Placemark) — complex multi-polygon
+#  soil zones. ~55 MiB decompressed.
 URL1 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/USEDO.kmz"
 #* Matches end-to-end on all four compared columns (5 411 rows).
-#  FastKML ~1.25× faster than ArchGDAL on this file.
+#  Structure: 5 411 Placemarks under 1 Document and 1 Folder. Geometry:
+#  5 429 Polygons wrapped in 5 411 MultiGeometry (≈1.003 Polygons per
+#  Placemark), 5 475 LinearRings — a handful of Polygons carry inner
+#  rings (holes). ~46 MiB decompressed.
 URL2 = "https://www.dec.ny.gov/data/der/enzones/enzone2022.kmz"
 #! Same upstream domain and root cause as URL1 (ESDAC / KMLer,
 #  comma-only delimiters; first <coordinates> is byte-identical to USEDO).
+#  Structure: 15 Placemarks aggregating ~24 400 Polygons via ~551
+#  MultiGeometry — same multi-polygon soil-zone pattern as URL1.
+#  ~55 MiB decompressed.
 URL3 = "https://esdac.jrc.ec.europa.eu/ESDB_Archive/ESDBv3/GoogleEarth/Aglim1.kmz"
-#* Matches end-to-end (28 557 rows). FastKML is ~14% *slower* than
-#  ArchGDAL on this file (a large flat layer of point Placemarks);
-#  suspected hot path on wide-and-shallow files in xml_parsing.jl —
-#  investigation tracked in TODO.md.
+#* Matches end-to-end (28 557 rows). Structure: 28 557 Polygon
+#  Placemarks under 1 Document, no Folder. Each Placemark = one Polygon
+#  → one LinearRing of 5 vertices forming a Landsat scene boundary
+#  quadrilateral (no MultiGeometry). A wide-and-shallow profile.
+#  ~34 MiB decompressed.
 URL4 = "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS-2_bound_world_0.kml"
-#* Matches end-to-end (114 037 rows across 8 thematic top-level Folders:
-#  Historical, Latest Quaternary, Late Quaternary, Middle/Late Quaternary,
-#  Undifferentiated Quaternary, Unspecified Age, Class B, California
-#  Offshore). With both `table_with_fastkml` and `table_with_archgdal`
-#  concatenating all top-level layers, FastKML pays the cost of iterating
-#  each layer (8 traversals of the lazy XML tree to extract per-layer
-#  placemarks) — so on this file FastKML is currently slightly slower
-#  than ArchGDAL on `main` despite being faster per-feature. See TODO.md
-#  for performance numbers and follow-up ideas.
+#* Matches end-to-end (114 037 rows). Structure verified by walking the
+#  XML tree: 8 thematic top-level Folders directly under the Document —
+#  Historical (150y), Latest Quaternary (15ky), Late Quaternary (130ky),
+#  Middle and Late Quaternary (750ky), Undifferentiated Quaternary
+#  (1.6My), Unspecified Age, Class B (various ages), California Offshore
+#  — plus 7 sub-Folders nested below them (15 Folders total). Geometry:
+#  114 474 LineStrings wrapped in 114 037 MultiGeometry (fault polyline
+#  traces). With both `table_with_fastkml` and `table_with_archgdal`
+#  concatenating all top-level layers, FastKML pays the cost of
+#  iterating each layer (8 traversals of the lazy XML tree to extract
+#  per-layer placemarks). ~420 MiB decompressed (largest file in the
+#  benchmark set).
 URL5 = "https://earthquake.usgs.gov/static/lfs/nshm/qfaults/qfaults.kmz"
 #! Matches after the benchmark methodology updates of `f0aab78` /
 #  `23222d6` (ArchGDAL multi-layer concat, name strip + entity decode),
 #  except for a single residual row whose source has a malformed
 #  `<coordinates>,,0</coordinates>` — FastKML returns `Float64[]`,
 #  ArchGDAL substitutes `(0,0,0)`. Accepted as a legitimate
-#  fallback-policy difference. FastKML ~1.83× faster than ArchGDAL
-#  (apples-to-apples, with all ArchGDAL leaf-folder layers concatenated).
+#  fallback-policy difference. Structure: 163 426 Point Placemarks
+#  (1:1 Point/Placemark, no MultiGeometry), 19 182 nested Folders.
+#  FastKML reports 3 top-level layers via `get_num_layers` while
+#  ArchGDAL maps each leaf Folder to a separate layer (~19k).
+#  ~102 MiB decompressed.
 URL6 = "https://ordsext.epa.gov/FLA/www3/national_frs.kmz"
-#? Not yet investigated.
+#? Not yet benchmarked end-to-end against ArchGDAL. Structure: 527
+#  Placemarks of mixed geometry types — 304 Point + 223 Polygon (with
+#  223 MultiGeometry and 279 LinearRings), 10 Folders. The only file in
+#  the cached benchmark set with mixed geometry — useful for multi-type
+#  robustness testing. ~3.4 MiB decompressed.
 URL7 = "https://www.neonscience.org/sites/default/files/NEON_Field_Sites_KMZ_v20_May2025.kmz"
 #! FastKML does not yet resolve `<NetworkLink>` elements, which this
-#  file relies on; pending feature work.
+#  file relies on; pending feature work. Structure: a NetworkLink-only
+#  manifest — 0 Placemarks, 2 NetworkLink elements pointing to remote
+#  KML at `geoservices.brgm.fr/KML/GEOL_1000/`. ~1.9 KiB.
 URL8 = "https://infoterre.brgm.fr/sites/default/files/upload/kml/kml_geo_1000.kml"
 #! Geometry interpretation diverges from Google Earth (which renders
 #  line strings); FastKML currently extracts points. Root cause not yet
-#  investigated.
+#  investigated. Structure: 956 LineString Placemarks (1:1
+#  LineString/Placemark, no MultiGeometry) under 1 Folder — FastKML's
+#  divergence is on the extraction side; the source clearly carries
+#  LineStrings. ~1.1 MiB decompressed.
 URL9 = "https://pubs.usgs.gov/of/2007/1264/SteepestDescents_Kilauea1983_10m_cell7500.KMZ"
 
 
@@ -193,6 +219,50 @@ function table_with_fastkml(path; layer::Union{Nothing,Integer} = nothing)
     # 8-layer file). This mirrors ArchGDAL's `dataset → getlayer`
     # pattern, which similarly shares the parse across layers.
     file = read(path, FastKML.LazyKMLFile)
+    n = FastKML.get_num_layers(file)
+    n == 0 && return DataFrame()
+    n == 1 && return DataFrame(file; layer = 1)
+    dfs = [DataFrame(file; layer = k) for k in 1:n]
+    return vcat(dfs...; cols = :union)
+end
+
+"""
+    table_with_fastkml_cursor(path; layer = nothing)
+
+Cursor-backed counterpart of [`table_with_fastkml`](@ref): collects each layer's
+placemarks by driving a single forward `XML.Cursor` over the layer subtree
+(`FastKML.TablesBridge.CursorPlacemarkIterator`) instead of the LazyNode
+tree-recursion. Same per-layer loop + `vcat`. Measures whether the bitstype-Token
+cursor walk (Phase 2/3) translates to a gain on the real table path.
+"""
+function table_with_fastkml_cursor(path; layer::Union{Nothing,Integer} = nothing)
+    file = read(path, FastKML.LazyKMLFile)
+    _layer_rows(k) =
+        DataFrame(collect(FastKML.TablesBridge.CursorPlacemarkIterator(FastKML.Layers.select_layer(file, k))))
+    if layer !== nothing
+        return _layer_rows(layer)
+    end
+    n = FastKML.get_num_layers(file)
+    n == 0 && return DataFrame()
+    n == 1 && return _layer_rows(1)
+    dfs = [_layer_rows(k) for k in 1:n]
+    return vcat(dfs...; cols = :union)
+end
+
+"""
+    table_with_fastkml_eager(path; layer = nothing)
+
+Eager-mode counterpart of [`table_with_fastkml`](@ref): parses the file into
+a fully materialized `KMLFile` (every KML element instantiated as a typed
+Julia struct) before extracting the placemark DataFrame. Comparison target
+when measuring whether XML.jl v0.4's parse improvements translate to a
+gain on the FastKML eager path — independent of the lazy walk regression.
+"""
+function table_with_fastkml_eager(path; layer::Union{Nothing,Integer} = nothing)
+    if layer !== nothing
+        return DataFrame(read(path, FastKML.KMLFile); layer = layer)
+    end
+    file = read(path, FastKML.KMLFile)
     n = FastKML.get_num_layers(file)
     n == 0 && return DataFrame()
     n == 1 && return DataFrame(file; layer = 1)
@@ -449,6 +519,7 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
 
     println(BENCHMARK_SECTION_CRAYON("Starting benchmarks..."))
     bench_fastkml_result = @benchmark table_with_fastkml($kml_file_path) seconds = benchmark_seconds
+    bench_fastkml_eager_result = @benchmark table_with_fastkml_eager($kml_file_path) seconds = benchmark_seconds
     bench_gdal_result = @benchmark table_with_archgdal($kml_file_path) seconds = benchmark_seconds
 
     # ────────────────────────── print results ─────────────────────────────────── #
@@ -457,26 +528,30 @@ function benchmark_url(target_url::AbstractString, benchmark_seconds::Integer)
 
     # Calculate values first
     fastkml_time_ms = median(bench_fastkml_result).time / 1e6
+    fastkml_eager_time_ms = median(bench_fastkml_eager_result).time / 1e6
     gdal_time_ms = median(bench_gdal_result).time / 1e6
     fastkml_mem_kib = round(Int, median(bench_fastkml_result).memory / 1024)
+    fastkml_eager_mem_kib = round(Int, median(bench_fastkml_eager_result).memory / 1024)
     gdal_mem_kib = round(Int, median(bench_gdal_result).memory / 1024)
 
-    # Print table header
+    # Print table header (3 backend columns)
     print(TABLE_HEADER_CRAYON(rpad("Metric", 30)))
     print(" ") # Separator space
-    print(TABLE_HEADER_CRAYON(lpad("FastKML.jl", 15)))
+    print(TABLE_HEADER_CRAYON(lpad("FastKML lazy", 15)))
+    print(" ") # Separator space
+    print(TABLE_HEADER_CRAYON(lpad("FastKML eager", 15)))
     print(" ") # Separator space
     print(TABLE_HEADER_CRAYON(lpad("ArchGDAL.jl", 15)))
     println() # Newline
 
-    println(SEPARATOR_CRAYON(rpad("", 30 + 1 + 15 + 1 + 15, '-'))) # Total width for the line
+    println(SEPARATOR_CRAYON(rpad("", 30 + (1 + 15) * 3, '-')))
 
     # Print data rows
     print(METRIC_NAME_CRAYON(rpad("Median elapsed time (ms)", 30)))
-    Printf.@printf " %15.2f %15.2f\n" fastkml_time_ms gdal_time_ms
+    Printf.@printf " %15.2f %15.2f %15.2f\n" fastkml_time_ms fastkml_eager_time_ms gdal_time_ms
 
     print(METRIC_NAME_CRAYON(rpad("Memory (KiB)", 30)))
-    Printf.@printf " %15d %15d\n" fastkml_mem_kib gdal_mem_kib
+    Printf.@printf " %15d %15d %15d\n" fastkml_mem_kib fastkml_eager_mem_kib gdal_mem_kib
 
     println(SEPARATOR_CRAYON(rpad("", 80, '─')))
     println() # Add a blank line for separation if calling multiple times

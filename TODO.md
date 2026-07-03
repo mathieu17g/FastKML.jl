@@ -8,85 +8,22 @@ completed milestones. For released changes, see
 
 ## Active items
 
-### Migration v0.4 — branch `wip-xml-v0.4` ⚠️ fonctionnelle mais 2-3× plus lente que wip-xml-next-bang
-
-**MISE À JOUR 2026-05-10 post-benchmark** : ma migration v0.4 est
-**fonctionnellement correcte** (577/577 tests) mais **PAS perf-cible**.
-Bench 3-way URL2/4/5/6 montre que v0.4 naïf est 2-3× plus lent que
-`wip-xml-next-bang-adoption` (qui reste la baseline performante).
-
-| URL  | wip-next-bang | wip-xml-v0.4 (naïf) | ArchGDAL |
-|------|---------------|---------------------|----------|
-| URL2 | 195 ms        | 448 ms (×2.30)      | 250 ms   |
-| URL4 | 261 ms        | 858 ms (×3.29)      | 297 ms   |
-| URL5 | 2345 ms       | 3873 ms (×1.65)     | 2425 ms  |
-| URL6 | 1254 ms       | 3369 ms (×2.69)     | 3253 ms  |
-
-Cause : ma migration utilise `XML.children(::LazyNode)` qui matérialise
-eagerly un Vector{LazyNode} par appel. FastKML walke deep+repeated,
-~170k Vector allocations sur URL4 vs 0 dans le streaming `next!` de wip.
-
-**Plan de récupération B/C documenté complet sur `wip-xml-v0.4`**
-(commit `a0d45a4`, section "Phase B/C plan — RESUME HERE"):
-- **Phase B** : exploiter `_lazy_tokenizer` (API privée v0.4) pour
-  streaming au lieu de `children()`. Files de référence + critères
-  GO/NO-GO + steps détaillés.
-- **Phase C** : engager joshday upstream avec data Phase B pour
-  obtenir une API publique streaming dans v0.4.
-
-**Décision**: NE PAS merger `wip-xml-v0.4` dans `main` en l'état.
-`wip-xml-next-bang-adoption` reste baseline perf jusqu'à ce que
-Phase B aboutisse.
-
-### Migration v0.4 — branch `wip-xml-v0.4` (historique : version originale)
-
-Local branch off `main` that targets the head of
-[`JuliaComputing/XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54)
-(v0.4 rewrite: streaming tokenizer, `Node{T}` parameterized by
-storage type, XPath, ~70% parse speedup at the source).
-
-**Status (2026-05-10):** migration COMPLETE. **577/577 tests pass**
-on v0.4 — full functional parity with `main` on the registry XML.jl
-v0.3. Total effort: ~1.5 hours (vs initial estimate of 2.5-4.5 days
-— a 20-50× revision; see the wip branch's TODO for the post-mortem).
-
-What was migrated:
-- `XMLAnyNode = Union{XML.Node, XML.LazyNode}` replaces v0.3's
-  `XML.AbstractXMLNode` supertype (gone in v0.4) — propagated to
-  every signature in 6 source files.
-- `KMLElement <: XML.AbstractXMLNode` dropped (Union not subtype-able).
-- 3 macros (`@for_each_immediate_child` etc.) simplified from
-  ~190 LOC of next!-based custom traversal to ~25 LOC uniform
-  `for child in XML.children(node)`. v0.4's `children()` is
-  polymorphic for both `Node` and `LazyNode`.
-- `xml_serialization.jl`: `XML.Node{String}(...)` parameterized
-  constructor, `Vector{Pair{String,String}}` attrs (was OrderedDict),
-  leaf-type children = `nothing` (v0.4 validates strict).
-- Signatures relaxed `String → AbstractString` for SubString interop:
-  `tagsym`, `_is_feature_tag`, `_is_container_tag`, `assign_field!`,
-  `assign_complex_object!`. v0.4's `tag()` returns `SubString{String}`
-  (zero-copy view into source).
-
-Setup: `[sources] XML = {path = "dev/XML.jl-v0.4"}` in `Project.toml`,
-`dev/XML.jl-v0.4/` cloned from `joshday/XML.jl` (SHA `e7e21a7`,
-unchanged since 2026-04-24), `mathieu17g/XML.jl` configured as a
-second remote for contribution-back. Both `dev/` and the wip branch
-stay local-only until PR #54 lands on the General registry.
-
-**Day-zero transition steps when v0.4 ships on General registry:**
-1. Drop `[sources]` from `Project.toml` (and from `test/Project.toml`).
-2. Keep `[compat] XML = "0.4"`.
-3. `Pkg.resolve()` — XML resolves from registry.
-4. Delete `dev/XML.jl-v0.4/` (no longer needed).
-5. Merge `wip-xml-v0.4` into `main`.
-6. Tag a `v0.2.0` release (substantial dependency bump).
-
-Estimated wait: 4-12 weeks from 2026-05-10 per current PR #54
-signal. Surveillance unchanged from previous status.
-
-This supersedes the "Patching XML.jl from FastKML" item below — that
-path was the workaround if #54 stalled, now obsolete since the
-migration is already done and waiting.
+> **RESUME HERE — 2026-07-03.** **XML.jl v0.4.0 est enregistré et publié**
+> ([release](https://github.com/JuliaData/XML.jl/releases/tag/v0.4.0)) et la
+> migration FastKML est **terminée sur cette branche** : PR #1 (`wip-xml-v0.4`
+> → `main`) est MERGEABLE — `[sources]` dev-pin supprimé (compat `XML = "0.4"`,
+> résolution registre), `CI.yml` ajouté (run `main` vert), historique purgé de
+> `notes/`, `benchmark/` élagué de l'ère d'investigation. Re-bench 07-03 : le
+> chemin cursor bat ArchGDAL 4/4 —
+> `benchmark/results_2026-07-03_xml-v04-tip_rebench.md`. Détail complet dans
+> l'archive « Migration XML.jl v0.4 — SHIPPED ».
+>
+> **Next :**
+> 1. Merger PR #1.
+> 2. Dérouler « Release readiness » (ci-dessous) — la pré-condition XML est levée.
+> 3. Veille upstream : XML v0.5 (flat node store prototypé — build ~2× plus
+>    rapide), `hash(::Node)` ([XML.jl#55](https://github.com/JuliaData/XML.jl/issues/55)),
+>    XLSX v0.12.0 (adoption jumelle).
 
 ### Performance — pistes (deferred)
 
@@ -213,43 +150,6 @@ Remaining low-priority modules:
 
 ## Deferred decisions
 
-### Patching XML.jl from FastKML — alternative to the `dev/XML.jl/` override
-
-Instead of waiting on
-[`XML.jl#54`](https://github.com/JuliaComputing/XML.jl/pull/54) (the
-upstream renovation that put PRs #58 and #59 on hold), FastKML could
-ship the perf gains via private helpers.
-
-- **PR #59 (`next!`/`prev!`) — feasible without type piracy.**
-  Define `FastKML.next!(o::XML.LazyNode)` (and `prev!`) as private
-  helpers in FastKML, dispatching on the foreign `XML.LazyNode` type
-  but living under FastKML's own function name (regular method
-  definition, not piracy). ~30 LOC. Uses XML.LazyNode's internal
-  field structure (`raw`, `tag`, `attributes`, `value`) — accept the
-  fragility as the cost of bypassing upstream latency. The macros in
-  `src/macros.jl` would call `FastKML.next!` instead of `XML.next!`;
-  drops the `dev/XML.jl/` requirement entirely.
-
-- **PR #58 (ctx-share inside `next_no_xml_space`) — harder.** The
-  patch is INSIDE an existing XML.jl method, so delivery means either
-  (a) `@eval`-ing a redefinition (full type piracy + redefinition
-  warnings + invalidations), or (b) vendoring the entire
-  `next_xml_space`/`next_no_xml_space` chain (~30 LOC) as private
-  FastKML helpers. Option (b) is cleanest but doubles the maintenance
-  surface. Worth ~60 MiB on URL2 per round-3 analysis, but URL2 is
-  already 25% faster than ArchGDAL — diminishing returns. Recommend
-  skipping.
-
-**Trigger to act:**
-1. **Either** we want to register FastKML.jl on the General registry
-   (the `dev/XML.jl/` override blocks that), **or**
-2. XML.jl#54 stalls beyond a few months without resolution.
-
-Until one fires, the `dev/XML.jl/` + `wip-xml-next-bang-adoption`
-override stays — it's cleaner than introducing fragile coupling to
-XML.jl internals. Recorded in
-[`memory:project_fastkml.md`](https://github.com/anthropics/claude-code/issues/0).
-
 ### Fallthrough strategy — Option A vs Option B
 
 Option A (filter `nothing` returns from `object()`, keep the warning)
@@ -270,8 +170,9 @@ problem.
 Substantial unreleased work documented in `CHANGELOG.md`. Bump and
 tag when the pre-conditions hold:
 
-- [ ] Patching XML.jl from FastKML decided (above) — required if we
-      want `Pkg.add("FastKML")` to work without dev/ override.
+- [x] ~~Patching XML.jl from FastKML decided~~ — sans objet : XML v0.4.0 est
+enregistré (2026-07-03) et le dev/ override supprimé (PR #1) ;
+`Pkg.add("FastKML")` résout XML depuis General.
 - [ ] CHANGELOG.md current and reviewed.
 - [ ] One last run of the full benchmark suite + integration tests
       against the version that will be tagged.
@@ -351,6 +252,52 @@ the macro itself (done in `src/macros.jl`'s docstring).
 ---
 
 ## Done — milestones (archive)
+
+### Migration XML.jl v0.4 — SHIPPED — 2026-07-03
+
+L'item actif « Migration v0.4 — anticipée » (bannières 05-10 / 05-21, plan
+Phase B/C, setup `dev/XML.jl-v0.4/`) a abouti : l'engagement upstream (issue
+#61 + commentaires #54/#58/#59, puis le chantier v0.4 côté JuliaData) a livré
+une **API streaming publique** (`Cursor`, Token isbits) qui récupère la classe
+perf de FastKML — et **XML v0.4.0 est enregistré le 2026-07-03**
+([release](https://github.com/JuliaData/XML.jl/releases/tag/v0.4.0), migration
+guide). FastKML adopté via **PR #1** : compat `"0.4"`, dev-pin `[sources]`
+supprimé, `CI.yml` ajouté (Julia 1 + lts), suite verte contre le registre
+(locale + run `main` GitHub). Re-bench 4 corpus vs la baseline 06-02 : lazy
+−9…−30 %, cursor −11…−47 % — **cursor devant ArchGDAL 4/4**
+(`benchmark/results_2026-07-03_xml-v04-tip_rebench.md`). Ménage : historique
+purgé de `notes/` (filter-repo, arbre byte-identique), labo
+`benchmark/walk_pattern_env/` + docs de mai supprimés (conclusions shippées,
+détail dans l'historique git), `dev/XML.jl-v0.4/` effacé. La décision différée
+« Patching XML.jl from FastKML » (contourner la latence upstream) est devenue
+sans objet.
+
+### Upstream Phase C — issues posted — 2026-05-20
+
+Opened [JuliaComputing/XML.jl#61](https://github.com/JuliaComputing/XML.jl/issues/61)
+("A StAX-style streaming primitive for v0.4 — recovering FastKML's lazy
+walk class without the LazyNode-as-cursor hack") + companion comments on
+PRs #54, #58, #59.
+
+Diverged from the Phase C plan in two ways worth recording:
+- **One issue, not two.** The planned "Issue B" (children() regression vs
+  PR #58) was folded into #61's body + the PR #58 comment rather than
+  filed separately.
+- **Reframed, not 4-open-options.** #61 argues a *two-layer StAX design*
+  (iterator-based `Tokenizer` + cursor-based `CursorNode`) with a
+  recommendation, informed by a SOTA survey of 9 streaming parsers
+  (`notes/upstream_issues/streaming_parser_research.md`). The α/β/γ/δ
+  open-questions framing and the failed-PoC narrative were dropped.
+- Supporting artefacts on `wip-xml-v0.4`: `streaming_parser_research.md`,
+  `benchmark/walk_pattern_env/` (synth bench + `decompose_techniques.jl`),
+  `benchmark/rootcause_iterate_tuple_allocation_2026-05-11.md` (renamed
+  from `poc_fastkml_raw_tokenizer_*`), `results_eager_vs_lazy_3way_*`.
+- Cross-package signal: @TimG1964 (XLSX.jl) had flagged the `next`/`prev`
+  removal on PR #54 in March 2026 — cited in #61 as an isomorphic use case.
+
+Branches pushed public for the issue's permalinks: `wip-xml-v0.4` +
+`wip-xml-next-bang-adoption` (FastKML), `dev-combined` (mathieu17g/XML.jl,
+= v0.3.8 + #58 + #59).
 
 ### OGC 2.2 + Google `gx:` completeness sweep — closed 2026-05-08
 
