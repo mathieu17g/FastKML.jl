@@ -19,18 +19,6 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
 XML = "72c71f33-b9b6-44de-8c94-c961784809e2"
 
-# `dev/XML.jl-v0.4/` is a checkout of `joshday/XML.jl@main` (the head of the
-# in-flight WIP PR #54 — XML.jl v0.4: rewrite of internals, streaming
-# tokenizer, XPath support). This branch (`wip-xml-v0.4`) anticipates the
-# v0.4 release by migrating FastKML's lazy-iteration and parsing code onto
-# the new API, so we are day-zero-ready when PR #54 lands.
-#
-# This override is local-only (the dev/ directory is gitignored). Drop the
-# [sources] section and bump [compat] XML to "0.4" once v0.4 is released
-# on the General registry.
-[sources]
-XML = {path = "dev/XML.jl-v0.4"}
-
 [weakdeps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
