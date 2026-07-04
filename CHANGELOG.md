@@ -5,12 +5,23 @@ All notable changes to FastKML.jl will be documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-07-04
 
-Substantial pre-release work since the initial commit. The package is
-not yet on the Julia registry; everything below is in the working tree
-on `main` (with the perf milestone living on the local
-`wip-xml-next-bang-adoption` branch — see Performance below).
+Substantial pre-release work since the initial commit — headlined by the
+migration to **XML.jl v0.4** and the cursor-backed extraction path that
+now beats the ArchGDAL baseline on all four benchmark corpora. The
+package is not yet on the Julia registry.
+
+### Changed — XML.jl v0.4 adoption
+
+- **`[compat] XML = "0.4"`**, resolved from the General registry (the
+  local `dev/` source pin is gone; `Pkg.add` on a clone just works).
+  The lazy-iteration and parsing internals moved off the removed 0.3
+  streaming API (`next`/`prev` era) onto v0.4's immutable `LazyNode`
+  and the new `Cursor` (StAX-style) API, with a cursor-backed placemark
+  fast path. Cursor/lazy content equivalence
+  (`isequal(df_lazy, df_cursor)`) holds on all four benchmark corpora —
+  see Performance below.
 
 ### Added — Public API
 
@@ -155,30 +166,29 @@ tracked allocations dropped 240 MiB → 123 MiB (-49%) on URL2 via
 `extract_text_content_fast` 0/1-fragment fast path +
 `Coordinates.parse_coordinates_automa` heuristic `sizehint!`.
 
-Full milestone (2026-05-08, on the local
-**`wip-xml-next-bang-adoption`** branch paired with `dev/XML.jl/`
-checkout on `dev-combined`):
+Full milestone (2026-07-03, shipped on `main` via the XML v0.4 cursor
+path — median time ms / allocated MiB, `@benchmark seconds = 10`):
 
-| URL | Time FastKML / ArchGDAL | vs ArchGDAL | vs `main` |
+| URL (rows) | cursor | lazy | ArchGDAL |
 |---|---|---|---|
-| URL2 enzone (5.4k rows) | 192 / 257 ms | **+25% faster** | -6% |
-| URL4 WRS-2 (28.5k rows) | 255 / 320 ms | **+20% faster** | -26% |
-| URL5 qfaults (114k rows) | 2363 / 2574 ms | **+8% faster** (was -15%) | -20% |
-| URL6 national_frs | 1249 / 3319 ms | **+62% faster** | -30% |
+| URL2 enzone (5.4k) | **161 / 166** | 198 / 178 | 249 / 13 |
+| URL4 WRS-2 (28.5k) | **164 / 86** | 314 / 149 | 304 / 25 |
+| URL5 qfaults (114k) | **1341 / 966** | 2441 / 1197 | 2298 / 357 |
+| URL6 national_frs (163k) | **709 / 273** | 1810 / 564 | 3853 / 155 |
 
-Memory dropped 30-54% across the four URLs vs `main`. The headline
-reversal is URL5 — a 24pp swing (-15% → +8%) — driven by
-`XML.next!` adoption removing per-traversal `LazyNode` allocations on
-the deep multi-layer walk.
+**The cursor path beats ArchGDAL on time on all four** (ArchGDAL's
+C++/GDAL core stays leaner in Julia-visible memory — orthogonal to the
+walk). Full sheets: `benchmark/results_2026-06-02_cursor_phase3.md`
+(baseline + configs) and
+`benchmark/results_2026-07-03_xml-v04-tip_rebench.md` (this table).
 
-Drivers, both on `wip` only:
-- `XML.next!` adoption in `@for_each_immediate_child` (in-place
-  `LazyNode` mutation; addresses the per-step allocation that
-  dominated traversal).
-- `_peek_text_content` raw-level text extraction in lazy paths
-  (sidesteps the per-call `LazyNode` allocation that
-  `@for_each_immediate_child` otherwise pays in
-  `extract_text_content_fast`).
+The May `XML.next!`/`prev!` experiment
+(`wip-xml-next-bang-adoption`, never merged) is retired: its findings
+drove the *upstream* streaming API instead
+([XML.jl#61](https://github.com/JuliaData/XML.jl/issues/61) → v0.4's
+`Cursor`), and the cursor path recovers that experiment's speed class
+while allocating a fraction of its memory (e.g. URL6: 273 vs
+2316 MiB).
 
 ### Internal
 
@@ -188,6 +198,12 @@ Drivers, both on `wip` only:
   console summary table.
 - Dead-code sweep via JET.jl on 2026-04-30: 1 typo fix shipped, ~11
   reports deferred for future triage (see `TODO.md`).
+- CI workflow added (`.github/workflows/CI.yml` — Julia 1 + lts,
+  ubuntu, dependency caching).
+- Repo hygiene: git history purged of the `notes/` coordination-scratch
+  directory (`filter-repo`, code tree byte-identical); the May
+  investigation era pruned from `benchmark/` (its conclusions shipped
+  upstream in XML v0.4).
 
 ## [0.1.0] — 2026-04-25
 

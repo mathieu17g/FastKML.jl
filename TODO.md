@@ -171,11 +171,17 @@ tag when the pre-conditions hold:
 - [x] ~~Patching XML.jl from FastKML decided~~ — sans objet : XML v0.4.0 est
 enregistré (2026-07-03) et le dev/ override supprimé (PR #1) ;
 `Pkg.add("FastKML")` résout XML depuis General.
-- [ ] CHANGELOG.md current and reviewed.
-- [ ] One last run of the full benchmark suite + integration tests
-      against the version that will be tagged.
+- [x] CHANGELOG.md current and reviewed — 2026-07-04 : entrée « XML.jl
+      v0.4 adoption » ajoutée, section Performance réécrite sur le
+      chemin cursor livré (table 07-03), Internal complété (CI, purge
+      notes/, élagage benchmark/).
+- [x] One last run of the full suite against the tagged tree —
+      2026-07-04, verte (XML v0.4.0 du registre) ; benchmarks =
+      `benchmark/results_2026-07-03_xml-v04-tip_rebench.md` (src
+      identique au tag).
 - [ ] Decide on registry submission (General registry, dedicated
-      registry, or stay url-based).
+      registry, or stay url-based). **Seul item restant — décision à
+      prendre ; v0.2.0 taguée + GitHub Release en attendant.**
 
 ---
 

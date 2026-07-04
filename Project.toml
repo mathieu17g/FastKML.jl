@@ -1,7 +1,7 @@
 name = "FastKML"
 uuid = "74919eb4-6d7e-4564-b3b0-39766c648c5e"
 authors = ["Mathieu BISKUPSKI and contributors"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 Automa = "67c07d97-cdcb-5c2c-af73-a7f9c32a568b"
