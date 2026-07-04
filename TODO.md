@@ -8,20 +8,20 @@ completed milestones. For released changes, see
 
 ## Active items
 
-> **RESUME HERE — 2026-07-03.** **XML.jl v0.4.0 est enregistré et publié**
-> ([release](https://github.com/JuliaData/XML.jl/releases/tag/v0.4.0)) et la
-> migration FastKML est **mergée dans `main`** (PR #1, 2026-07-03) : compat
-> `XML = "0.4"` résolu depuis le registre (dev-pin `[sources]` supprimé),
-> `CI.yml` en place, historique purgé de `notes/`, `benchmark/` élagué.
-> Re-bench 07-03 : le chemin cursor bat ArchGDAL 4/4 —
-> `benchmark/results_2026-07-03_xml-v04-tip_rebench.md`. Détail complet dans
-> l'archive « Migration XML.jl v0.4 — SHIPPED ».
+> **RESUME HERE — 2026-07-03.** **XML.jl v0.4.0 is registered and published**
+> ([release](https://github.com/JuliaData/XML.jl/releases/tag/v0.4.0)) and the
+> FastKML migration is **merged into `main`** (PR #1, 2026-07-03): `XML = "0.4"`
+> compat resolved from the registry (`[sources]` dev-pin removed), `CI.yml` in
+> place, history purged of `notes/`, `benchmark/` pruned. 07-03 re-bench: the
+> cursor path beats ArchGDAL 4/4 —
+> `benchmark/results_2026-07-03_xml-v04-tip_rebench.md`. Full detail in the
+> "XML.jl v0.4 migration — SHIPPED" archive entry.
 >
-> **Next :**
-> 1. Dérouler « Release readiness » (ci-dessous) — la pré-condition XML est levée.
-> 2. Veille upstream : XML v0.5 (flat node store prototypé — build ~2× plus
->    rapide), `hash(::Node)` ([XML.jl#55](https://github.com/JuliaData/XML.jl/issues/55)),
->    XLSX v0.12.0 (adoption jumelle).
+> **Next:**
+> 1. Walk through "Release readiness" (below) — the XML pre-condition is lifted.
+> 2. Upstream watch: XML v0.5 (flat node store prototyped — ~2× faster build),
+>    `hash(::Node)` ([XML.jl#55](https://github.com/JuliaData/XML.jl/issues/55)),
+>    XLSX v0.12.0 (twin adoption).
 
 ### Performance — pistes (deferred)
 
@@ -168,20 +168,22 @@ problem.
 Substantial unreleased work documented in `CHANGELOG.md`. Bump and
 tag when the pre-conditions hold:
 
-- [x] ~~Patching XML.jl from FastKML decided~~ — sans objet : XML v0.4.0 est
-enregistré (2026-07-03) et le dev/ override supprimé (PR #1) ;
-`Pkg.add("FastKML")` résout XML depuis General.
-- [x] CHANGELOG.md current and reviewed — 2026-07-04 : entrée « XML.jl
-      v0.4 adoption » ajoutée, section Performance réécrite sur le
-      chemin cursor livré (table 07-03), Internal complété (CI, purge
-      notes/, élagage benchmark/).
+- [x] ~~Patching XML.jl from FastKML decided~~ — moot: XML v0.4.0 is
+      registered (2026-07-03) and the dev/ override removed (PR #1);
+      `Pkg.add("FastKML")` resolves XML from General.
+- [x] CHANGELOG.md current and reviewed — 2026-07-04: "XML.jl v0.4
+      adoption" entry added, Performance section rewritten around the
+      shipped cursor path (07-03 table), Internal completed (CI,
+      notes/ purge, benchmark/ pruning).
 - [x] One last run of the full suite against the tagged tree —
-      2026-07-04, verte (XML v0.4.0 du registre) ; benchmarks =
+      2026-07-04, green (XML v0.4.0 from the registry); benchmarks =
       `benchmark/results_2026-07-03_xml-v04-tip_rebench.md` (src
-      identique au tag).
+      identical to the tag).
 - [ ] Decide on registry submission (General registry, dedicated
-      registry, or stay url-based). **Seul item restant — décision à
-      prendre ; v0.2.0 taguée + GitHub Release en attendant.**
+      registry, or stay url-based). **Deliberately set aside
+      (2026-07-04) — no urgency, options open; revisit once the
+      KML/XML ecosystem context has settled. v0.2.0 stays tagged +
+      GitHub-released in the meantime.**
 
 ---
 
@@ -231,7 +233,7 @@ ago is suspect; one from 2-3 months ago is almost certainly stale.
 Cost of profiling (~5 min with `@benchmark` + `Profile`) is trivial
 relative to optimizing the wrong site.
 
-### Outillage avant action
+### Tooling before action
 
 The XSD audit script (`tools/audit_kml_coverage.jl`) — written as
 Phase 2, MIDWAY through the OGC sweep, not at the end — turned the
@@ -257,24 +259,24 @@ the macro itself (done in `src/macros.jl`'s docstring).
 
 ## Done — milestones (archive)
 
-### Migration XML.jl v0.4 — SHIPPED — 2026-07-03
+### XML.jl v0.4 migration — SHIPPED — 2026-07-03
 
-L'item actif « Migration v0.4 — anticipée » (bannières 05-10 / 05-21, plan
-Phase B/C, setup `dev/XML.jl-v0.4/`) a abouti : l'engagement upstream (issue
-#61 + commentaires #54/#58/#59, puis le chantier v0.4 côté JuliaData) a livré
-une **API streaming publique** (`Cursor`, Token isbits) qui récupère la classe
-perf de FastKML — et **XML v0.4.0 est enregistré le 2026-07-03**
+The active item "v0.4 migration — anticipated" (05-10 / 05-21 banners, Phase
+B/C plan, `dev/XML.jl-v0.4/` setup) has landed: the upstream engagement (issue
+#61 + comments on #54/#58/#59, then the v0.4 effort on the JuliaData side)
+delivered a **public streaming API** (`Cursor`, isbits Token) that recovers
+FastKML's performance class — and **XML v0.4.0 was registered on 2026-07-03**
 ([release](https://github.com/JuliaData/XML.jl/releases/tag/v0.4.0), migration
-guide). FastKML adopté via **PR #1** : compat `"0.4"`, dev-pin `[sources]`
-supprimé, `CI.yml` ajouté (Julia 1 + lts), suite verte contre le registre
-(locale + run `main` GitHub). Re-bench 4 corpus vs la baseline 06-02 : lazy
-−9…−30 %, cursor −11…−47 % — **cursor devant ArchGDAL 4/4**
-(`benchmark/results_2026-07-03_xml-v04-tip_rebench.md`). Ménage : historique
-purgé de `notes/` (filter-repo, arbre byte-identique), labo
-`benchmark/walk_pattern_env/` + docs de mai supprimés (conclusions shippées,
-détail dans l'historique git), `dev/XML.jl-v0.4/` effacé. La décision différée
-« Patching XML.jl from FastKML » (contourner la latence upstream) est devenue
-sans objet.
+guide). FastKML adopted it via **PR #1**: compat `"0.4"`, `[sources]` dev-pin
+removed, `CI.yml` added (Julia 1 + lts), suite green against the registry
+(locally + `main` run on GitHub). Re-bench of the 4 corpora vs the 06-02
+baseline: lazy −9…−30%, cursor −11…−47% — **cursor ahead of ArchGDAL 4/4**
+(`benchmark/results_2026-07-03_xml-v04-tip_rebench.md`). Cleanup: history
+purged of `notes/` (filter-repo, byte-identical tree), the
+`benchmark/walk_pattern_env/` lab + May docs deleted (conclusions shipped,
+detail preserved in git history), `dev/XML.jl-v0.4/` erased. The deferred
+decision "Patching XML.jl from FastKML" (working around upstream latency)
+became moot.
 
 ### Upstream Phase C — issues posted — 2026-05-20
 
