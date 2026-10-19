@@ -84,10 +84,6 @@ recover the post-`next!` allocation residual; not urgent.
 Current global coverage **~55%** (see archive for full breakdown).
 Remaining low-priority modules:
 
-- [ ] `src/html_entities.jl` (39%) — `_load_entities` cache-build path
-      runs once per session and isn't exercised because the cache is
-      populated. Best left alone unless we add a test that wipes the
-      Scratch cache.
 - [ ] `ext/FastKMLMakieExt.jl` (61 LOC) — heavy Makie dep tree (60+
       transitive packages). Skip in CI; if needed, a minimal
       Makie-free smoke test verifying method dispatch.

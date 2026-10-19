@@ -754,6 +754,17 @@ end
     @test decode("&#65;") == "&#65;"
     @test decode("&unknown;") == "&unknown;"
 
+    # The table holds the 2125 names that the HTML standard's list writes with a semicolon
+    # (the standard declares the list static). The historical forms without one (`&amp`,
+    # `&para`, …) must neither add a name one character short nor overwrite a real name.
+    @test length(FastKML.HtmlEntities.NAMED_HTML_ENTITIES) == 2125
+    @test decode("&l; &am; &nbs; &AEli;") == "&l; &am; &nbs; &AEli;"
+    @test decode("&par; &para;") == "\u2225 \u00b6"
+    @test decode("&ecir; &ocir; &ord;") == "\u2256 \u229a \u2a5d"
+
+    # A name can stand for two code points
+    @test decode("&NotEqualTilde;") == "\u2242\u0338"
+
     # Plain text passes through
     @test decode("hello world") == "hello world"
     @test decode("") == ""

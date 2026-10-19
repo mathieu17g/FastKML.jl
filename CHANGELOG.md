@@ -5,6 +5,13 @@ All notable changes to FastKML.jl will be documented in this file.
 The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **HTML named entities come from a table in the package source.** `decode_named_entities` took its table from a Scratch cache built at precompilation, and downloaded the WHATWG list again whenever that cache was missing or unreadable, as when another Julia version had written it. Offline, precompilation failed. The table is now generated once into `src/html_entities_table.jl` by `tools/generate_html_entities.jl`, with the BSD 3-Clause notice of the HTML standard. Downloads, JSON, Scratch and Serialization are no longer direct dependencies.
+- **Historical entity names no longer corrupt the table.** The WHATWG list also gives 106 names without their semicolon, such as `&amp` and `&para`, and each entered the table one character short. That added 97 names that do not exist: `&l;` read as `<`, `&nbs;` as a no-break space. It also gave `&ecir;`, `&ocir;`, `&ord;` and `&par;` the characters of `&ecirc`, `&ocirc`, `&ordm` and `&para`. The table now holds the 2125 names written with their semicolon.
+
 ## [0.2.0] — 2026-07-04
 
 Substantial pre-release work since the initial commit — headlined by the
