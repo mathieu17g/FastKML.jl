@@ -1,0 +1,15 @@
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/" # Location of package manifests
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "julia"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Standard libraries: a bound such as Dates = "1.11" leaves Julia 1.10 unable to resolve
+      - dependency-name: "Dates"
+      - dependency-name: "REPL"
