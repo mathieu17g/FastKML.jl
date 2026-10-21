@@ -5,7 +5,6 @@ using OrderedCollections: OrderedDict
 using StaticArrays
 using Automa, Parsers
 using TimeZones, Dates
-using InteractiveUtils: subtypes
 
 # XML LazyNode and Node iterating macros helpers
 include("macros.jl")

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- **Loading FastKML no longer loads REPL or InteractiveUtils.** The interactive layer menu of `select_layer` moved into an extension on REPL, `FastKMLREPLExt`. In an interactive terminal session, `select_layer` loads REPL when it needs the menu, so the menu opens as before; elsewhere the first layer is still used with a warning. The KML types are found by scanning FastKML's own modules instead of calling `InteractiveUtils.subtypes`, in the same order. On Julia 1.13, whose system image holds neither module, `using FastKML` in a fresh non-interactive process takes 162 ms instead of 227 ms (medians of 15 alternated runs). On Julia 1.10, whose system image holds both, the time is unchanged.
 - **The weak dependencies declare compat bounds**: DataFrames 1, Makie 0.24 and ZipArchives 2. Only GeoInterface had one, so a breaking release of the other three would still have loaded their extensions. Makie 0.24 is the series the extension was checked against: it loads, its conversions return Makie geometry, and a `MultiGeometry` plots through its recipe.
 
 ### Fixed
