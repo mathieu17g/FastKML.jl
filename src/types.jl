@@ -33,7 +33,6 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
 using OrderedCollections: OrderedDict
 using StaticArrays
 using TimeZones, Dates
-using InteractiveUtils: subtypes
 import XML
 
 # XML.jl v0.3 had an abstract supertype `XML.AbstractXMLNode` that both
@@ -781,12 +780,38 @@ function _populate_tag_to_type()
 end
 
 # Helper functions
+
+# Concrete subtypes of `T`, depth first, each level sorted by name: the order
+# `InteractiveUtils.subtypes` gives. Only FastKML's own modules are scanned, since every KML
+# type is declared there, so the result does not depend on what else is loaded.
 function all_concrete_subtypes(T)
     out = DataType[]
-    for S in subtypes(T)
+    for S in _direct_subtypes(T)
         isabstracttype(S) ? append!(out, all_concrete_subtypes(S)) : push!(out, S)
     end
     out
+end
+
+# Types declared in FastKML whose supertype is `T`, sorted by name. A parametric `T` such as
+# `KMLElement` is matched by name: the supertype of `Object` is `KMLElement{(:id, :targetId)}`.
+function _direct_subtypes(T)
+    target = (parentmodule(T), nameof(T))
+    found = DataType[]
+    pending = Module[parentmodule(@__MODULE__)]
+    while !isempty(pending)
+        m = pop!(pending)
+        for name in names(m; all = true)
+            isdefined(m, name) || continue
+            v = getfield(m, name)
+            if v isa DataType && nameof(v) === name && parentmodule(v) === m
+                st = supertype(v)
+                (parentmodule(st), nameof(st)) == target && push!(found, v)
+            elseif v isa Module && v !== m && nameof(v) === name && parentmodule(v) === m
+                push!(pending, v)
+            end
+        end
+    end
+    sort!(found; by = string)
 end
 
 # Show method for KMLElement

@@ -9,6 +9,8 @@ using TimeZones
 using XML
 using StaticArrays  # Add this import
 using ZipArchives
+import InteractiveUtils
+import REPL  # loads FastKMLREPLExt
 
 
 
@@ -21,6 +23,13 @@ using ZipArchives
 end
 
 @testset "Empty Constructors" begin
+    # The KML types are found by scanning FastKML's own modules. The list must be the one
+    # `InteractiveUtils.subtypes` gives, order included: tag registration follows it.
+    reference(T) = mapreduce(S -> isabstracttype(S) ? reference(S) : DataType[S], vcat,
+                             InteractiveUtils.subtypes(T); init = DataType[])
+    @test !isempty(FastKML.all_concrete_subtypes(FastKML.KMLElement))
+    @test FastKML.all_concrete_subtypes(FastKML.KMLElement) == reference(FastKML.KMLElement)
+
     for T in FastKML.all_concrete_subtypes(FastKML.KMLElement)
         @test T() isa T
     end
@@ -336,6 +345,11 @@ end
     @test FastKML.Layers.select_layer(multi_lazy, "Layer B") !== nothing
     @test FastKML.Layers.select_layer(multi_lazy, 1) !== nothing
     @test FastKML.Layers.select_layer(multi_lazy, 2) !== nothing
+
+    # Several layers and none requested: outside an interactive terminal session, the first
+    # layer is used, with a warning.
+    first_layer = @test_logs (:warn, r"Multiple layers available") FastKML.Layers.select_layer(multi_lazy, nothing)
+    @test first_layer == FastKML.Layers.select_layer(multi_lazy, 1)
 end
 
 @testset "PlacemarkTable / Tables.jl interface" begin
@@ -677,6 +691,34 @@ end
     # `layer` and `simplify_single_parts` keywords flow through to PlacemarkTable
     @test nrow(DataFrame(eg; layer = 1)) == 3
     @test DataFrame(eg; simplify_single_parts = true) isa DataFrame
+end
+
+@testset "REPL extension (layer menu)" begin
+    # Loading REPL, as every REPL session does, loads the interactive layer menu.
+    @test Base.get_extension(FastKML, :FastKMLREPLExt) !== nothing
+    @test hasmethod(FastKML.Layers._choose_layer_interactively, Tuple{Vector{String}})
+
+    # Loading FastKML alone loads neither REPL nor InteractiveUtils. Where the system image
+    # already holds them (Julia 1.10), they are loaded before and after alike.
+    code = """
+        ids = (Base.PkgId(Base.UUID("3fa0cd96-eef1-5676-8a61-b3b8758bbffb"), "REPL"),
+               Base.PkgId(Base.UUID("b77e0a4c-d291-57a0-90e8-8db25a27a240"), "InteractiveUtils"))
+        before = map(id -> haskey(Base.loaded_modules, id), ids)
+        using FastKML
+        print(map(id -> haskey(Base.loaded_modules, id), ids) == before)
+        """
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    @test read(cmd, String) == "true"
+
+    # A REPL session does not always expose REPL to package extensions (Julia 1.13 does not),
+    # so `select_layer` loads REPL itself when it needs the menu, which brings the extension.
+    code = """
+        using FastKML
+        print(FastKML.Layers._layer_menu_available(["A", "B"]), " ",
+              Base.get_extension(FastKML, :FastKMLREPLExt) !== nothing)
+        """
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    @test read(cmd, String) == "true true"
 end
 
 @testset "layer=:all single-pass extraction" begin

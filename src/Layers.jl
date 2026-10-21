@@ -2,12 +2,33 @@ module Layers
 
 export list_layers, get_layer_names, get_num_layers, get_layer_info, select_layer
 
-using REPL.TerminalMenus
 using Base: read  # Import read from Base
 import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, XMLAnyNode
 import XML: XML, children, tag, attributes, Cursor, next!, skip_element!, @for_each_child, LazyNode
 import ..XMLParsing: extract_text_content_fast
 import ..Macros: @find_immediate_child, @for_each_immediate_child, @count_immediate_children
+
+# Interactive choice among layer names, in a terminal session: takes the names, returns the
+# index chosen, or -1 if the choice is cancelled. FastKMLREPLExt adds the method, built on
+# `REPL.TerminalMenus`; without it, `select_layer` uses the first layer.
+function _choose_layer_interactively end
+
+const _REPL_PKGID = Base.PkgId(Base.UUID("3fa0cd96-eef1-5676-8a61-b3b8758bbffb"), "REPL")
+
+# Whether the menu can be shown for these names. A REPL session does not always expose REPL to
+# package extensions (Julia 1.13 does not), so REPL is loaded here, when the menu is needed,
+# which brings FastKMLREPLExt. Its method is then newer than this call: look it up in the
+# latest world.
+function _layer_menu_available(opts)
+    if Base.get_extension(parentmodule(@__MODULE__), :FastKMLREPLExt) === nothing
+        try
+            Base.require(_REPL_PKGID)
+        catch
+            return false
+        end
+    end
+    return Base.invokelatest(hasmethod, _choose_layer_interactively, Tuple{typeof(opts)})
+end
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Eager (KMLFile) helpers
@@ -359,13 +380,12 @@ function select_layer(file::Union{KMLFile,LazyKMLFile}, layer_spec::Union{Nothin
         if length(layer_options) == 1
             return layer_options[1][3]
         end
-        # If multiple layers, prompt user for selection
-        # Use REPL.TerminalMenus for interactive selection
+        # If multiple layers, prompt user for selection, in an interactive terminal session.
+        # The menu's method may have just been defined: call it in the latest world.
         opts = [opt[2] for opt in layer_options]
         interactive = (stdin isa Base.TTY) && (stdout isa Base.TTY) && isinteractive()
-        if interactive
-            menu = RadioMenu(opts; pagesize = min(10, length(opts)))
-            choice_idx = request("Select a layer:", menu)
+        if interactive && _layer_menu_available(opts)
+            choice_idx = Base.invokelatest(_choose_layer_interactively, opts)
             choice_idx == -1 && error("Layer selection cancelled.")
             return layer_options[choice_idx][3]
         else
