@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- **The weak dependencies declare compat bounds**: DataFrames 1, Makie 0.24 and ZipArchives 2. Only GeoInterface had one, so a breaking release of the other three would still have loaded their extensions. Makie 0.24 is the series the extension was checked against: it loads, its conversions return Makie geometry, and a `MultiGeometry` plots through its recipe.
+
 ### Fixed
 
 - **HTML named entities come from a table in the package source.** `decode_named_entities` took its table from a Scratch cache built at precompilation, and downloaded the WHATWG list again whenever that cache was missing or unreadable, as when another Julia version had written it. Offline, precompilation failed. The table is now generated once into `src/html_entities_table.jl` by `tools/generate_html_entities.jl`, with the BSD 3-Clause notice of the HTML standard. Downloads, JSON, Scratch and Serialization are no longer direct dependencies.
