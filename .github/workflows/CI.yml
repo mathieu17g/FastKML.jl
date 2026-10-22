@@ -33,3 +33,24 @@ jobs:
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+
+  downgrade:
+    # The lowest versions that the [compat] bounds allow for the dependencies, chosen by
+    # Resolver.jl; the weak dependencies of the extensions are installed by the tests, not
+    # lowered. From Julia 1.12, Pkg.test keeps these versions: julia-downgrade-compat documents
+    # that earlier versions may resolve again when the tests have their own Project.toml.
+    # No cache: these versions differ from those of the test job.
+    name: Julia 1 - ubuntu-latest - lowest compatible versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/julia-downgrade-compat@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          allow_reresolve: false
+          force_latest_compatible_version: false
