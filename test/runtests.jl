@@ -174,6 +174,16 @@ end
     # Same leniency for 2D pairs
     coords = FastKML.Coordinates.parse_coordinates_automa("1.0,2.0,3.0,4.0")
     @test coords == [SVector(1.0, 2.0), SVector(3.0, 4.0)]
+
+    # Signs, exponents, bare points and special values read alike under Parsers 2 and 3
+    coords = FastKML.Coordinates.parse_coordinates_automa("+1,-2.25,1e3 .5,5.,-0")
+    @test coords == [SVector(1.0, -2.25, 1000.0), SVector(0.5, 5.0, -0.0)]
+    coords = FastKML.Coordinates.parse_coordinates_automa("NaN,Inf,-inf")
+    @test isnan(coords[1][1]) && coords[1][2] == Inf && coords[1][3] == -Inf
+
+    # A token that is not a number raises; the exception type depends on the Parsers version
+    @test_throws Exception FastKML.Coordinates.parse_coordinates_automa("abc,1")
+    @test_throws Exception FastKML.Coordinates.parse_coordinates_automa("1.2.3,1")
 end
 
 @testset "Utils" begin

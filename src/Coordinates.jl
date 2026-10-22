@@ -45,14 +45,14 @@ const _coord_machine_pattern =
 const COORDINATE_MACHINE = compile(_coord_machine_pattern)
 
 # Action table for the FSM
-const PARSE_OPTIONS = Parsers.Options()
 const AUTOMA_COORD_ACTIONS = Dict{Symbol,Expr}(
     # save the start position of a number
     :mark => :(current_mark = p),
 
-    # convert the byte slice to Float64 and push!
+    # convert the byte slice to Float64 and push! (default options: the same call reads a
+    # one-based byte view under Parsers 2 and 3)
     :number => quote
-        push!(results_vector, Parsers.parse(Float64, view(data_bytes, current_mark:p-1), PARSE_OPTIONS))
+        push!(results_vector, Parsers.parse(Float64, view(data_bytes, current_mark:p-1)))
     end,
 )
 
