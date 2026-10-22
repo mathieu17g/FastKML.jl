@@ -374,6 +374,44 @@ end
     # layer is used, with a warning.
     first_layer = @test_logs (:warn, r"Multiple layers available") FastKML.Layers.select_layer(multi_lazy, nothing)
     @test first_layer == FastKML.Layers.select_layer(multi_lazy, 1)
+
+    # ── Placemarks held next to sub-containers ──
+    # They form a layer of their own, after the containers' layers; a sub-container's
+    # placemarks belong to its layer only. Both reading modes must agree.
+    mixed_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <name>Mixed</name>
+        <Placemark><name>D1</name><Point><coordinates>0,0</coordinates></Point></Placemark>
+        <Folder>
+          <name>Sub</name>
+          <Placemark><name>S1</name><Point><coordinates>1,1</coordinates></Point></Placemark>
+        </Folder>
+        <Placemark><name>D2</name><Point><coordinates>2,2</coordinates></Point></Placemark>
+      </Document>
+    </kml>
+    """
+    loose_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Folder>
+        <name>F</name>
+        <Placemark><name>F1</name><Point><coordinates>0,0</coordinates></Point></Placemark>
+      </Folder>
+      <Placemark><name>T1</name><Point><coordinates>1,1</coordinates></Point></Placemark>
+    </kml>
+    """
+    row_names(file, layer) = [r.name for r in Tables.rows(PlacemarkTable(file; layer))]
+    for (kml, names, rows) in ((mixed_kml, ["Sub", "<Placemarks in Mixed>"], [["S1"], ["D1", "D2"]]),
+                               (loose_kml, ["F", "<Ungrouped Top-Level Placemarks>"], [["F1"], ["T1"]]))
+        for file in (parse(KMLFile, kml), parse(LazyKMLFile, kml))
+            @test get_layer_names(file) == names
+            @test [row_names(file, k) for k in 1:2] == rows
+            @test row_names(file, :all) == reduce(vcat, rows)
+            # The layer list of an out-of-range error counts the placemarks of each layer.
+            message = try FastKML.Layers.select_layer(file, 3) catch e; e.msg end
+            @test occursin("[2] $(names[2]) ($(length(rows[2])) placemarks)", message)
+        end
+    end
 end
 
 @testset "PlacemarkTable / Tables.jl interface" begin

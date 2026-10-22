@@ -153,6 +153,13 @@ function _lazy_top_level_features(file::LazyKMLFile)
     features
 end
 
+# Source of the layer made of the placemarks a container holds next to its sub-containers.
+# The sub-containers are layers of their own, so only the container's own placemarks belong
+# to this one; the eager counterpart is a `Vector{Placemark}`.
+struct DirectPlacemarks
+    container::LazyNode
+end
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Placemark counting functions (recursive)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -185,6 +192,11 @@ function _count_placemarks_recursive_lazy(node::XMLAnyNode)::Int
         end
     end
     return count
+end
+
+function _count_direct_placemarks_lazy(source::DirectPlacemarks)::Int
+    container = source.container
+    return @count_immediate_children container c (XML.nodetype(c) === XML.Element && tag(c) == "Placemark")
 end
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -230,7 +242,7 @@ function _build_lazy_layer_info(file::LazyKMLFile)
         if has_placemarks
             idx_counter += 1
             container_desc = main_container_name !== nothing ? main_container_name : "Top Container"
-            push!(layer_infos, (idx_counter, "<Placemarks in $container_desc>", main_container))
+            push!(layer_infos, (idx_counter, "<Placemarks in $container_desc>", DirectPlacemarks(main_container)))
         end
     else
         has_top_placemarks = false
@@ -248,9 +260,9 @@ function _build_lazy_layer_info(file::LazyKMLFile)
 
         if has_top_placemarks
             idx_counter += 1
-            # Store the kml element itself as the source for top-level placemarks
+            # The top-level placemarks are the direct children of the kml element
             kml_elem = _find_kml_element(file.root_node)
-            push!(layer_infos, (idx_counter, "<Ungrouped Top-Level Placemarks>", kml_elem))
+            push!(layer_infos, (idx_counter, "<Ungrouped Top-Level Placemarks>", DirectPlacemarks(kml_elem)))
         end
     end
     return layer_infos
@@ -353,7 +365,7 @@ function select_layer(file::Union{KMLFile,LazyKMLFile}, layer_spec::Union{Nothin
         error("Layer \"$layer_spec\" not found by name. Available: $(join([opt[2] for opt in layer_options], ", "))")
     elseif layer_spec isa Integer
         if 1 <= layer_spec <= length(layer_options)
-            return layer_options[layer_spec][3] # Return the source (Document, Folder, or Placemark vector)
+            return layer_options[layer_spec][3] # Return the source (container, Placemark vector, or DirectPlacemarks)
         else
             # Generate a detailed error message with all available layers
             layer_details_parts = String[]
@@ -365,6 +377,8 @@ function select_layer(file::Union{KMLFile,LazyKMLFile}, layer_spec::Union{Nothin
                 elseif origin isa Document || origin isa Folder
                     num_placemarks = _count_placemarks_recursive(origin)
                     item_count_str = " ($num_placemarks placemarks)"
+                elseif origin isa DirectPlacemarks
+                    item_count_str = " ($(_count_direct_placemarks_lazy(origin)) placemarks)"
                 elseif origin isa XMLAnyNode
                     placemark_count = _count_placemarks_recursive_lazy(origin)
                     item_count_str = " ($placemark_count placemarks)"
@@ -428,6 +442,8 @@ function list_layers(kml_input::Union{AbstractString,KMLFile,LazyKMLFile})
         elseif origin isa Document || origin isa Folder
             num_placemarks = _count_placemarks_recursive(origin)
             item_count_str = " ($num_placemarks placemarks)"
+        elseif origin isa DirectPlacemarks
+            item_count_str = " ($(_count_direct_placemarks_lazy(origin)) placemarks)"
         elseif origin isa XMLAnyNode
             placemark_count = _count_placemarks_recursive_lazy(origin)
             item_count_str = " ($placemark_count placemarks)"
