@@ -429,7 +429,7 @@ end
     @test length(rows_by_name) == 1
     @test rows_by_name[1].name == "P1"
 
-    # ── MultiGeometry path coverage in parse_geometry_lazy ──
+    # ── MultiGeometry rows ──
     multi_geom_kml = """<?xml version="1.0" encoding="UTF-8"?>
     <kml xmlns="http://www.opengis.net/kml/2.2">
       <Document>
@@ -465,6 +465,59 @@ end
     simplified  = collect(Tables.rows(PlacemarkTable(smg; simplify_single_parts = true)))
     @test no_simplify[1].geometry isa FastKML.MultiGeometry
     @test simplified[1].geometry  isa FastKML.Point
+
+    # ── A LazyKMLFile is read with one forward XML.Cursor per layer ──
+    # Its rows must be those of the LazyNode walk, kept as the reference for this check.
+    TB = FastKML.TablesBridge
+    edge_kml = """<?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+      <Document>
+        <Folder>
+          <name>Cases</name>
+          <Placemark>
+            <name>split <![CDATA[cdata]]> text</name><description>a<!-- c -->b</description>
+            <Point><coordinates>1,2</coordinates></Point>
+          </Placemark>
+          <Placemark><name>entities &amp; &amp;eacute;</name><Point><coordinates> 1,2,3 </coordinates></Point></Placemark>
+          <Placemark><name>no geometry</name></Placemark>
+          <Placemark><name/><LineString><coordinates></coordinates></LineString></Placemark>
+          <Placemark><Polygon><innerBoundaryIs>
+            <LinearRing><coordinates>0,0 1,0 1,1 0,0</coordinates></LinearRing>
+          </innerBoundaryIs></Polygon></Placemark>
+          <Placemark><Polygon>
+            <outerBoundaryIs><LinearRing><coordinates>0,0 2,0 2,2 0,0</coordinates></LinearRing></outerBoundaryIs>
+            <innerBoundaryIs><LinearRing><coordinates></coordinates></LinearRing></innerBoundaryIs>
+          </Polygon></Placemark>
+          <Placemark><MultiGeometry>
+            <Point><coordinates>0,0</coordinates></Point>
+            <MultiGeometry><LineString><coordinates>0,0 1,1</coordinates></LineString></MultiGeometry>
+          </MultiGeometry></Placemark>
+          <Placemark><MultiGeometry></MultiGeometry></Placemark>
+          <Placemark><gx:Track><when>2010-05-28T02:02:09Z</when><gx:coord>1 2</gx:coord></gx:Track></Placemark>
+          <Placemark><gx:Track></gx:Track></Placemark>
+          <Placemark>
+            <name>first</name><name>second</name>
+            <Point><coordinates>5,5</coordinates></Point><Point><coordinates>6,6</coordinates></Point>
+          </Placemark>
+          <Placemark><Model><Location><longitude>1</longitude><latitude>2</latitude></Location></Model></Placemark>
+          <Folder><Placemark><name>deep</name><Point><coordinates>7,8</coordinates></Point></Placemark></Folder>
+        </Folder>
+        <Folder>
+          <name>Other</name>
+          <Placemark><name>other</name><Point><coordinates>9,9</coordinates></Point></Placemark>
+        </Folder>
+      </Document>
+    </kml>
+    """
+    edge_lazy = parse(LazyKMLFile, edge_kml)
+    @test length(TB._placemark_iterator(edge_lazy, 1)) == 13
+    for (file, k) in ((read(eg, LazyKMLFile), nothing), (multi_lazy, 1), (multi_lazy, 2),
+                      (edge_lazy, 1), (edge_lazy, 2))
+        it = TB._placemark_iterator(file, k)
+        @test it isa TB.CursorPlacemarkIterator
+        reference = TB.EagerLazyPlacemarkIterator(FastKML.Layers.select_layer(file, k))
+        @test isequal(collect(it), collect(reference))
+    end
 end
 
 @testset "Validation" begin
@@ -767,6 +820,12 @@ end
     # Duplicate-name layers stay distinguishable via layer_idx
     @test count(==("Layer A"), df_lazy.layer_name) == 3
     @test Set(df_lazy.layer_idx[df_lazy.layer_name .== "Layer A"]) == Set([1, 3])
+    # Each layer is read with the cursor walk, whose rows are those of the LazyNode walk.
+    TB = FastKML.TablesBridge
+    reference = DataFrame([(; layer_idx = idx, layer_name = lname, pl...)
+                           for (idx, lname, src) in TB.get_layer_info(file_lazy)
+                           for pl in TB.EagerLazyPlacemarkIterator(src)])
+    @test isequal(df_lazy, reference)
 
     # ── Eager path ──
     file_eager = parse(KMLFile, kml)
@@ -890,8 +949,8 @@ end
     @test get_num_layers(lazy) == 1
     @test get_layer_names(lazy) == ["Tracks"]
 
-    # `parse_geometry_lazy` recognises gx:Track and returns a populated
-    # `gx_Track` (when + gx_coord). The fast path leaves auxiliary fields
+    # The lazy table recognises gx:Track and returns a populated
+    # `gx_Track` (when + gx_coord). It leaves auxiliary fields
     # (ExtendedData, Model, Icon, gx_angles) at default — read as `KMLFile`
     # if you need those.
     df = DataFrame(path)

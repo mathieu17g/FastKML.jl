@@ -23,7 +23,7 @@ const KML = parentmodule(@__MODULE__)
 
 #────────────────────────── Optimized Lazy Iterator Types ──────────────────────────#
 
-# ===== Optimized Eager Collection (FASTEST - Recommended) =====
+# ===== LazyNode walk, the reference the cursor walk below is tested against =====
 struct EagerLazyPlacemarkIterator
     placemarks::Vector{NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}}
 
@@ -71,6 +71,7 @@ Base.eltype(::Type{EagerLazyPlacemarkIterator}) = eltype(fieldtype(EagerLazyPlac
 # field-accumulating loops don't box captured locals. Extraction is INLINE:
 # where the LazyNode path does `@find_immediate_child … then extract`, the
 # cursor extracts the moment it is positioned on the target (it cannot revisit).
+# `PlacemarkTable` reads every layer of a `LazyKMLFile` this way.
 const _PM_ROW = NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}
 
 struct CursorPlacemarkIterator
@@ -450,7 +451,7 @@ function _placemark_iterator(file::LazyKMLFile, layer_spec::Union{Nothing,String
     if selected_source === nothing
         return (p for p in ()) # Return empty iterator if no layer found
     end
-    return EagerLazyPlacemarkIterator(selected_source)
+    return CursorPlacemarkIterator(selected_source)
 end
 
 #──────────────────────────── streaming PlacemarkTable type ────────────────────────────#
@@ -579,7 +580,7 @@ function _all_layers_rows(tbl::PlacemarkTable)
                         description = pl.description,
                         geometry = geom_to_return,
                     )
-                end for pl in EagerLazyPlacemarkIterator(source)
+                end for pl in CursorPlacemarkIterator(source)
             ) for (idx, lname, source) in layer_options
         )
     else
