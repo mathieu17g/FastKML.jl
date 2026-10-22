@@ -175,7 +175,15 @@ function assign_complex_object!(parent::Types.KMLElement, child_object::Types.KM
     child_type = typeof(child_object)
     parent_type = typeof(parent)
 
-    # Pass 1: prefer direct type match on any field, regardless of declaration
+    # Pass 1: the field named by the tag, when its type accepts the child. Fields that share
+    # a type, such as the four `hotSpot` fields of ScreenOverlay, differ only by their tag.
+    tag_field = Types.tagsym(original_tag)
+    if hasfield(parent_type, tag_field) && child_type <: Types.typemap(parent_type)[tag_field]
+        setfield!(parent, tag_field, child_object)
+        return
+    end
+
+    # Pass 2: prefer direct type match on any field, regardless of declaration
     # order. This avoids mis-routing when a later, specific field
     # (e.g. `ExtendedData::ExtendedData` on `gx_Track`) would otherwise be
     # eclipsed by an earlier vector field whose `eltype` Julia widens to `Any`.
@@ -187,7 +195,7 @@ function assign_complex_object!(parent::Types.KMLElement, child_object::Types.KM
         end
     end
 
-    # Pass 2: vector field match with a concrete `eltype`. Vectors whose
+    # Pass 3: vector field match with a concrete `eltype`. Vectors whose
     # eltype widens to `Any` (e.g. `Union{Vector{Coord2}, Vector{Coord3}}` on
     # `gx_Track.gx_coord`) are NOT valid destinations for arbitrary
     # KMLElement children — skip them so a real type mismatch is reported
