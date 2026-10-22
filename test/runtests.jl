@@ -48,6 +48,20 @@ end
     end
 end
 
+@testset "Exported names" begin
+    # A name exported by both FastKML and Base, bound to different things, is ambiguous after
+    # `using FastKML`: an error under Julia 1.13, a warning under 1.10.
+    clashes = filter(names(FastKML)) do n
+        Base.isexported(FastKML, n) && Base.isexported(Base, n) &&
+            !(isdefined(FastKML, n) && getglobal(FastKML, n) === getglobal(Base, n))
+    end
+    @test isempty(clashes)
+
+    code = "using FastKML; print(size([1, 2]))"
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    @test read(cmd, String) == "(2,)"
+end
+
 
 @testset "GeoInterface" begin
     # Use SVector for coordinates instead of tuples

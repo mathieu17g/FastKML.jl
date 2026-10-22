@@ -10,7 +10,7 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
        # Component types
        Link, Icon, Orientation, Location, Scale, Lod, LatLonBox, LatLonAltBox,
        Region, gx_LatLonQuad, gx_ViewerOptions, gx_option, hotSpot,
-       overlayXY, screenXY, rotationXY, size,
+       overlayXY, screenXY, rotationXY,
        ItemIcon, ViewVolume, ImagePyramid, Snippet, Data, SimpleData, SchemaData,
        gx_SimpleArrayData, ExtendedData, Metadata, Alias, ResourceMap, SimpleField,
        gx_SimpleArrayField, Schema, AtomAuthor, AtomLink,
@@ -226,7 +226,7 @@ end
 const overlayXY = hotSpot
 const screenXY = hotSpot
 const rotationXY = hotSpot
-const size = hotSpot
+# `<size>` has the same type but no alias, which would shadow `Base.size`.
 
 Base.@kwdef mutable struct Link <: Object
     @object
@@ -651,7 +651,7 @@ Base.@kwdef mutable struct ScreenOverlay <: Overlay
     @option overlayXY ::overlayXY
     @option screenXY ::screenXY
     @option rotationXY ::rotationXY
-    @option size ::size
+    @option size ::hotSpot
     rotation::Float64 = 0.0
 end
 
