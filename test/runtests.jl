@@ -1059,6 +1059,41 @@ end
     @test FastKML.gx_TimeSpan().end_ === nothing
 end
 
+@testset "ScreenOverlay positioning" begin
+    # overlayXY, screenXY, rotationXY and size all have the type `hotSpot`: each element must
+    # be read into the field its tag names, whatever their order.
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2">
+      <Document>
+        <ScreenOverlay>
+          <name>legend</name>
+          <overlayXY x="0" y="1" xunits="fraction" yunits="fraction"/>
+          <screenXY x="10" y="20" xunits="pixels" yunits="insetPixels"/>
+          <rotationXY x="0.5" y="0.25" xunits="fraction" yunits="fraction"/>
+          <size x="100" y="0.2" xunits="pixels" yunits="fraction"/>
+        </ScreenOverlay>
+        <ScreenOverlay>
+          <size x="3" y="4" xunits="pixels" yunits="pixels"/>
+          <overlayXY x="1" y="2" xunits="pixels" yunits="pixels"/>
+        </ScreenOverlay>
+      </Document>
+    </kml>
+    """
+    xy(h) = h === nothing ? nothing : (h.x, h.y, string(h.xunits), string(h.yunits))
+    for file in (parse(KMLFile, kml), KMLFile(parse(LazyKMLFile, kml)))
+        legend, other = file.children[1].Features
+        @test xy(legend.overlayXY)  == (0.0, 1.0, "fraction", "fraction")
+        @test xy(legend.screenXY)   == (10.0, 20.0, "pixels", "insetPixels")
+        @test xy(legend.rotationXY) == (0.5, 0.25, "fraction", "fraction")
+        @test xy(legend.size)       == (100.0, 0.2, "pixels", "fraction")
+        @test xy(other.size)        == (3.0, 4.0, "pixels", "pixels")
+        @test xy(other.overlayXY)   == (1.0, 2.0, "pixels", "pixels")
+        @test other.screenXY === nothing
+        @test other.rotationXY === nothing
+    end
+end
+
 @testset "NetworkLinkControl modeling" begin
     # OGC 2.2 §12.2: <NetworkLinkControl> is a top-level <kml> child carrying
     # session metadata for a NetworkLink. All fields are optional; we exercise
