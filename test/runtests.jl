@@ -981,6 +981,14 @@ end
         ("cadence",   "int",   "Cadence"),
         ("power",     "float", "Power"),
     ])
+    # name and id are the two optional attributes of <Schema>. An id is an XML ID: never empty.
+    @test schema.name === nothing
+    named = FastKML.object(XML.parse(
+        """<Schema name="track" id="trackSchema"><SimpleField type="int" name="hr"/></Schema>""", XML.Node)[1])
+    @test (named.name, named.id) == ("track", "trackSchema")
+    bare = FastKML.object(XML.parse("""<Schema><SimpleField type="int" name="hr"/></Schema>""", XML.Node)[1])
+    @test bare.id === nothing
+    @test occursin("<Schema>", sprint(FastKML.write, bare))
 
     # ── ExtendedData → SchemaData → gx:SimpleArrayData with one <gx:value> per Track point ──
     @test track.ExtendedData.children !== nothing
@@ -994,6 +1002,15 @@ end
     @test by_name["cadence"]   == ["86", "103", "108", "113", "113", "113", "113"]
     @test by_name["heartrate"] == ["181", "177", "175", "173", "173", "173", "173"]
     @test by_name["power"]     == ["327.0", "177.0", "179.0", "162.0", "166.0", "177.0", "183.0"]
+
+    # ── One <gx:angles> per Track point, like <when> and <gx:coord> ──
+    angles_pm = FastKML.object(XML.parse("""
+        <Placemark><gx:Track>
+          <when>2010-05-28T02:02:09Z</when><when>2010-05-28T02:02:35Z</when>
+          <gx:coord>1 2 3</gx:coord><gx:coord>4 5 6</gx:coord>
+          <gx:angles>45.54 66.2 4.13</gx:angles><gx:angles>46.1 66 4</gx:angles>
+        </gx:Track></Placemark>""", XML.Node)[1])
+    @test angles_pm.Geometry.gx_angles == ["45.54 66.2 4.13", "46.1 66 4"]
 
     # ── Lazy path (via LazyKMLFile) ──
     lazy = read(path, LazyKMLFile)
@@ -1279,6 +1296,24 @@ end
     @test FastKML.gx_ViewerOptions().gx_options === nothing
     @test FastKML.gx_option().name === nothing
     @test FastKML.gx_option().enabled === nothing
+end
+
+@testset "Styles" begin
+    # <listItemType> takes the values of its enumeration.
+    ls = FastKML.object(XML.parse(
+        "<ListStyle><listItemType>checkHideChildren</listItemType></ListStyle>", XML.Node)[1])
+    @test ls.listItemType == FastKML.Enums.listItemType("checkHideChildren")
+end
+
+@testset "Atom elements" begin
+    # The children of <atom:author> are Atom elements, read like the other prefixed elements.
+    doc = FastKML.object(XML.parse("""
+        <Document><atom:author>
+          <atom:name>A. Author</atom:name><atom:uri>https://example.org/</atom:uri><atom:email>a@example.org</atom:email>
+        </atom:author></Document>""", XML.Node)[1])
+    author = doc.atom_author
+    @test (author.atom_name, author.atom_uri, author.atom_email) ==
+          ("A. Author", "https://example.org/", "a@example.org")
 end
 
 @testset "Unmodeled top-level tags are skipped, not fatal" begin

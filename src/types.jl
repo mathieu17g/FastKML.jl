@@ -433,16 +433,18 @@ Base.@kwdef mutable struct gx_SimpleArrayField <: KMLElement{(:type, :name)}
     @option displayName::String
 end
 
-Base.@kwdef mutable struct Schema <: KMLElement{(:id,)}
-    id::String = ""
+Base.@kwdef mutable struct Schema <: KMLElement{(:name, :id)}
+    @option name::String
+    @option id::String
     @option SimpleFields::Vector{SimpleField}
     @option gx_SimpleArrayFields::Vector{gx_SimpleArrayField}
 end
 
+# The children of <atom:author> are Atom elements, hence the `atom_` prefix.
 Base.@kwdef mutable struct AtomAuthor <: KMLElement{()}
-    @option name::String
-    @option uri::String
-    @option email::String
+    @option atom_name::String
+    @option atom_uri::String
+    @option atom_email::String
 end
 
 Base.@kwdef mutable struct AtomLink <: KMLElement{(:href, :rel, :type, :hreflang, :title, :length)}
@@ -485,7 +487,7 @@ end
 
 Base.@kwdef mutable struct ListStyle <: SubStyle
     @object
-    @option listItemType::Symbol
+    @option listItemType::Enums.listItemType
     @option bgColor ::String
     @option ItemIcons ::Vector{ItemIcon}
 end
@@ -603,7 +605,7 @@ Base.@kwdef mutable struct gx_Track <: Geometry
     @altitude_mode_elements
     @option when ::Vector{Union{TimeZones.ZonedDateTime,Dates.Date,String}}
     @option gx_coord ::Union{Vector{Coord2},Vector{Coord3}}
-    @option gx_angles ::String
+    @option gx_angles ::Vector{String}
     @option Model ::Model
     @option ExtendedData::ExtendedData
     @option Icon ::Icon
