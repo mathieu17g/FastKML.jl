@@ -3,7 +3,7 @@ module TablesBridge
 export PlacemarkTable
 
 import Tables
-import ..Layers: get_layer_info, select_layer
+import ..Layers: get_layer_info, select_layer, DirectPlacemarks
 import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, Geometry,
                 LinearRing, Point, LineString, Polygon, MultiGeometry, Coord2, Coord3,
                 gx_Track, XMLAnyNode
@@ -13,7 +13,8 @@ import ..HtmlEntities: decode_named_entities
 import ..Coordinates: parse_coordinates_automa
 import ..TimeParsing: parse_iso8601
 import ..Utils: unwrap_single_part_multigeometry
-import XML: XML, parse, Node, LazyNode, tag, children, attributes, Cursor, next!, @for_each_child
+import XML: XML, parse, Node, LazyNode, tag, children, attributes, Cursor, next!, skip_element!,
+            @for_each_child
 using StaticArrays
 using Base.Iterators: flatten
 using TimeZones, Dates
@@ -27,11 +28,11 @@ const KML = parentmodule(@__MODULE__)
 struct EagerLazyPlacemarkIterator
     placemarks::Vector{NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}}
 
-    function EagerLazyPlacemarkIterator(root_node::XMLAnyNode)
+    function EagerLazyPlacemarkIterator(root_node::XMLAnyNode, recurse::Bool = true)
         placemarks = Vector{NamedTuple{(:name, :description, :geometry),Tuple{String,String,Union{Missing,Geometry}}}}()
         sizehint!(placemarks, 1000)  # Pre-allocate for typical layer size
 
-        _collect_placemarks_optimized!(placemarks, root_node)
+        _collect_placemarks_optimized!(placemarks, root_node, recurse)
 
         # Shrink to fit
         sizehint!(placemarks, length(placemarks))
@@ -40,8 +41,11 @@ struct EagerLazyPlacemarkIterator
     end
 end
 
-# Optimized collection with minimal allocations
-function _collect_placemarks_optimized!(placemarks::Vector, node::XMLAnyNode)
+EagerLazyPlacemarkIterator(source::DirectPlacemarks) = EagerLazyPlacemarkIterator(source.container, false)
+
+# Optimized collection with minimal allocations; with `recurse = false`, only the
+# placemarks `node` holds directly.
+function _collect_placemarks_optimized!(placemarks::Vector, node::XMLAnyNode, recurse::Bool = true)
     @for_each_immediate_child node child begin
         XML.nodetype(child) === XML.Element || continue
         
@@ -50,7 +54,7 @@ function _collect_placemarks_optimized!(placemarks::Vector, node::XMLAnyNode)
         if child_tag == "Placemark"
             placemark_data = extract_placemark_fields_lazy(child)
             push!(placemarks, placemark_data)
-        elseif child_tag in ("Document", "Folder")
+        elseif recurse && child_tag in ("Document", "Folder")
             _collect_placemarks_optimized!(placemarks, child)
         end
     end
@@ -77,16 +81,18 @@ const _PM_ROW = NamedTuple{(:name, :description, :geometry),Tuple{String,String,
 struct CursorPlacemarkIterator
     placemarks::Vector{_PM_ROW}
 
-    function CursorPlacemarkIterator(source::LazyNode)
+    function CursorPlacemarkIterator(source::LazyNode, recurse::Bool = true)
         placemarks = Vector{_PM_ROW}()
         sizehint!(placemarks, 1000)
         c = Cursor(source)        # cursor positioned at the layer container
         next!(c)                  # land on `source` (depth 1)
-        _cursor_collect_placemarks!(placemarks, c)
+        _cursor_collect_placemarks!(placemarks, c, recurse)
         sizehint!(placemarks, length(placemarks))
         new(placemarks)
     end
 end
+
+CursorPlacemarkIterator(source::DirectPlacemarks) = CursorPlacemarkIterator(source.container, false)
 
 Base.iterate(it::CursorPlacemarkIterator, state = 1) =
     state > length(it.placemarks) ? nothing : (it.placemarks[state], state + 1)
@@ -247,14 +253,16 @@ function _cursor_extract_placemark(c::Cursor)
     return (name = name, description = description, geometry = geometry)
 end
 
-function _cursor_collect_placemarks!(rows::Vector{_PM_ROW}, c::Cursor)
+# With `recurse = false`, only the placemarks the current element holds directly: each
+# sub-container is skipped by byte scan instead of being tokenized.
+function _cursor_collect_placemarks!(rows::Vector{_PM_ROW}, c::Cursor, recurse::Bool = true)
     @for_each_child c ch begin
         if XML.nodetype(ch) === XML.Element
             ct = tag(ch)
             if ct == "Placemark"
                 push!(rows, _cursor_extract_placemark(c))
             elseif ct == "Document" || ct == "Folder"
-                _cursor_collect_placemarks!(rows, c)
+                recurse ? _cursor_collect_placemarks!(rows, c) : skip_element!(c)
             end
         end
     end
