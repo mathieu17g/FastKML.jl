@@ -39,7 +39,9 @@ end
             n = FastKML.to_xml(o)
             tag = XML.tag(n)
             if !isnothing(tag)
-                @test occursin(tag, replace(string(T), '_' => ':'))
+                # The element is named after the type, up to case and the prefix separator:
+                # `gx_Track` writes <gx:Track>, `AtomAuthor` <atom:author>, `StyleMapPair` <Pair>.
+                @test occursin(replace(lowercase(tag), ':' => ""), replace(lowercase(string(nameof(T))), '_' => ""))
             end
             o2 = FastKML.object(n)
             @test o2 isa T
@@ -111,6 +113,76 @@ end
         rm(temp, force = true)
     catch
         # Ignore cleanup errors
+    end
+
+    # ── Written files are KML 2.2 ──
+    # Both fixtures validate against the OGC KML 2.2 schema and Google's gx extension. Every
+    # element and attribute of the source must come back under the same path, as many times,
+    # with the same value up to its spelling (numbers, booleans, date-times), and the
+    # children of each element must keep their order.
+    function paths!(out, node, path = "")
+        for c in XML.children(node)
+            XML.nodetype(c) === XML.Element || continue
+            p = string(path, "/", XML.tag(c))
+            for (k, v) in something(XML.attributes(c), Pair{String,String}[])
+                startswith(k, "xmlns") || push!(get!(out, string(p, "/@", k), String[]), v)
+            end
+            leaf = !any(x -> XML.nodetype(x) === XML.Element, XML.children(c))
+            text = join(String(XML.value(x)) for x in XML.children(c) if XML.nodetype(x) in (XML.Text, XML.CData))
+            push!(get!(out, p, String[]), leaf ? strip(text) : "")
+            paths!(out, c, p)
+        end
+        return out
+    end
+    numbers(s) = (t = split(s, [' ', ',', '\n', '\t']; keepempty = false);
+                  v = tryparse.(Float64, t); isempty(t) || any(isnothing, v) ? nothing : v)
+    booleans = Dict("1" => true, "true" => true, "0" => false, "false" => false)
+    function same(a, b)
+        a == b && return true
+        na, nb = numbers(a), numbers(b)
+        (na === nothing || nb === nothing) || return na == nb
+        (haskey(booleans, a) && haskey(booleans, b)) && return booleans[a] == booleans[b]
+        ta, tb = FastKML.TimeParsing.parse_iso8601(a; warn = false), FastKML.TimeParsing.parse_iso8601(b; warn = false)
+        return !(ta isa AbstractString) && !(tb isa AbstractString) && ta == tb
+    end
+    # Paths of the elements whose children are written in another order. Children the source
+    # lacks there, such as a default value FastKML always writes, are left to the test of
+    # extra paths.
+    function moved!(out, a, b, path = "")
+        ea = [c for c in XML.children(a) if XML.nodetype(c) === XML.Element]
+        tags = XML.tag.(ea)
+        eb = [c for c in XML.children(b) if XML.nodetype(c) === XML.Element && XML.tag(c) in tags]
+        tags == XML.tag.(eb) || return push!(out, path)
+        for (i, (x, y)) in enumerate(zip(ea, eb))
+            moved!(out, x, y, string(path, "/", XML.tag(x), "[", i, "]"))
+        end
+        return out
+    end
+    # Values FastKML writes even when the source leaves them out.
+    always_written = ["/kml/Document/Snippet/@maxLines"]
+    namespaces = Dict("gx" => "http://www.google.com/kml/ext/2.2", "atom" => "http://www.w3.org/2005/Atom",
+                      "xal" => "urn:oasis:names:tc:ciq:xsdschema:xAL:2.0")
+    @testset "$name" for name in ("kml22_coverage.kml", "gx_Track_example.kml")
+        source = joinpath(@__DIR__, name)
+        written = tempname() * ".kml"
+        FastKML.write(written, read(source, KMLFile))
+        s, w = XML.read(source, XML.Node), XML.read(written, XML.Node)
+        a = paths!(Dict{String,Vector{String}}(), s)
+        b = paths!(Dict{String,Vector{String}}(), w)
+        @test sort([p for p in keys(a) if length(get(b, p, String[])) != length(a[p])]) == String[]
+        @test sort([p for p in keys(b) if !haskey(a, p) && !(p in always_written)]) == String[]
+        @test sort([p for p in keys(a) if length(get(b, p, String[])) == length(a[p]) && !all(same.(a[p], b[p]))]) == String[]
+        @test moved!(String[], s, w) == String[]
+
+        # The root declares the KML namespace and each prefix the file uses.
+        root = only(c for c in XML.children(w) if XML.nodetype(c) === XML.Element)
+        declared = Dict(XML.attributes(root))
+        @test declared["xmlns"] == "http://www.opengis.net/kml/2.2"
+        prefixes = Set(first(split(p, ':')) for path in keys(b) for p in split(path, '/') if occursin(':', p) && !startswith(p, '@'))
+        @test sort([p for p in prefixes if get(declared, "xmlns:$p", nothing) != get(namespaces, p, "")]) == String[]
+
+        @test read(written, KMLFile) == read(source, KMLFile)
+        rm(written, force = true)
     end
 end
 
