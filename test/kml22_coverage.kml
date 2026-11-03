@@ -1,0 +1,474 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+  <NetworkLinkControl>
+    <minRefreshPeriod>10</minRefreshPeriod>
+    <maxSessionLength>3600</maxSessionLength>
+    <cookie>session=1</cookie>
+    <message>Updated</message>
+    <linkName>Feed</linkName>
+    <linkDescription>Live feed</linkDescription>
+    <linkSnippet maxLines="1">Live feed snippet</linkSnippet>
+    <expires>2026-12-31T00:00:00Z</expires>
+    <Update>
+      <targetHref>https://example.org/feed.kml</targetHref>
+      <Change>
+        <Placemark targetId="p3">
+          <visibility>0</visibility>
+        </Placemark>
+      </Change>
+    </Update>
+    <Camera>
+      <longitude>-122.2</longitude>
+      <latitude>37.37</latitude>
+      <altitude>-20</altitude>
+      <gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+    </Camera>
+  </NetworkLinkControl>
+  <Document id="doc">
+    <name>Writer coverage</name>
+    <open>1</open>
+    <atom:author>
+      <atom:name>A. Author</atom:name>
+    </atom:author>
+    <atom:link href="https://example.org/"/>
+    <address>1 Main Street</address>
+    <phoneNumber>+1 555 0100</phoneNumber>
+    <Snippet maxLines="1">Short summary</Snippet>
+    <description>Document description</description>
+    <LookAt>
+      <gx:TimeSpan>
+        <begin>2010-05-28T02:02:09Z</begin>
+        <end>2010-05-28T02:02:56Z</end>
+      </gx:TimeSpan>
+      <gx:ViewerOptions>
+        <gx:option name="historicalimagery" enabled="0"/>
+      </gx:ViewerOptions>
+      <longitude>-122.2</longitude>
+      <latitude>37.37</latitude>
+      <altitude>0</altitude>
+      <heading>20</heading>
+      <tilt>30</tilt>
+      <range>1300</range>
+      <altitudeMode>clampToGround</altitudeMode>
+    </LookAt>
+    <TimeSpan>
+      <begin>2010-05-28</begin>
+      <end>2010-05-29</end>
+    </TimeSpan>
+    <Style id="s">
+      <IconStyle>
+        <color>ff00ff00</color>
+        <colorMode>normal</colorMode>
+        <scale>0.5</scale>
+        <heading>90</heading>
+        <Icon>
+          <href>icon.png</href>
+        </Icon>
+        <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
+      </IconStyle>
+      <LabelStyle>
+        <color>ff00ffff</color>
+        <colorMode>random</colorMode>
+        <scale>1.1</scale>
+      </LabelStyle>
+      <LineStyle>
+        <color>ff0000ff</color>
+        <colorMode>normal</colorMode>
+        <gx:labelVisibility>1</gx:labelVisibility>
+        <width>2</width>
+        <gx:outerColor>ff00ff00</gx:outerColor>
+        <gx:outerWidth>0.5</gx:outerWidth>
+        <gx:physicalWidth>3</gx:physicalWidth>
+      </LineStyle>
+      <PolyStyle>
+        <color>7f00ff00</color>
+        <colorMode>random</colorMode>
+        <fill>1</fill>
+        <outline>0</outline>
+      </PolyStyle>
+      <BalloonStyle>
+        <bgColor>ffffffbb</bgColor>
+        <textColor>ff000000</textColor>
+        <text>$[name]</text>
+        <displayMode>default</displayMode>
+      </BalloonStyle>
+      <ListStyle>
+        <listItemType>check</listItemType>
+        <bgColor>ff336699</bgColor>
+        <ItemIcon>
+          <state>open</state>
+          <href>open.png</href>
+        </ItemIcon>
+      </ListStyle>
+    </Style>
+    <StyleMap id="m">
+      <Pair>
+        <key>normal</key>
+        <styleUrl>#s</styleUrl>
+      </Pair>
+      <Pair>
+        <key>highlight</key>
+        <Style>
+          <IconStyle>
+            <scale>1.2</scale>
+          </IconStyle>
+        </Style>
+      </Pair>
+    </StyleMap>
+    <Schema name="track" id="trackSchema">
+      <SimpleField type="string" name="note">
+        <displayName>Note</displayName>
+      </SimpleField>
+      <gx:SimpleArrayField type="int" name="heartrate">
+        <displayName>Heart rate</displayName>
+      </gx:SimpleArrayField>
+    </Schema>
+    <Placemark>
+      <name>Track</name>
+      <gx:balloonVisibility>0</gx:balloonVisibility>
+      <gx:Track>
+        <altitudeMode>absolute</altitudeMode>
+        <when>2010-05-28T02:02:09Z</when>
+        <when>2010-05-28T02:02:35Z</when>
+        <gx:coord>-122.207881 37.371915 156.0</gx:coord>
+        <gx:coord>-122.205712 37.373288 152.0</gx:coord>
+        <gx:angles>45.54 66.2 4.13</gx:angles>
+        <gx:angles>46.1 66.0 4.0</gx:angles>
+        <Model>
+          <gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+          <Link>
+            <href>marker.dae</href>
+          </Link>
+        </Model>
+        <ExtendedData>
+          <SchemaData schemaUrl="#trackSchema">
+            <SimpleData name="note">first lap</SimpleData>
+            <gx:SimpleArrayData name="heartrate">
+              <gx:value>86</gx:value>
+              <gx:value>103</gx:value>
+            </gx:SimpleArrayData>
+          </SchemaData>
+        </ExtendedData>
+      </gx:Track>
+    </Placemark>
+    <Placemark>
+      <name>Tracks</name>
+      <gx:MultiTrack>
+        <gx:interpolate>1</gx:interpolate>
+        <gx:Track>
+          <gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>
+          <when>2010-05-28T02:02:09Z</when>
+          <gx:coord>-122.2 37.3 10.0</gx:coord>
+        </gx:Track>
+      </gx:MultiTrack>
+    </Placemark>
+    <Placemark>
+      <name>Line</name>
+      <ExtendedData>
+        <Data name="kind">
+          <displayName>Kind</displayName>
+          <value>road</value>
+        </Data>
+      </ExtendedData>
+      <LineString>
+        <gx:altitudeOffset>2.5</gx:altitudeOffset>
+        <gx:drawOrder>3</gx:drawOrder>
+        <tessellate>1</tessellate>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>-122.0,37.0,0 -122.1,37.1,0</coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>Legacy metadata</name>
+      <Metadata>
+        <custom>
+          <item>1</item>
+        </custom>
+      </Metadata>
+      <Point>
+        <coordinates>0,0</coordinates>
+      </Point>
+    </Placemark>
+    <NetworkLink>
+      <name>Feed</name>
+      <refreshVisibility>1</refreshVisibility>
+      <flyToView>1</flyToView>
+      <Link>
+        <href>https://example.org/feed.kml</href>
+        <refreshMode>onInterval</refreshMode>
+        <refreshInterval>30</refreshInterval>
+        <viewRefreshMode>onStop</viewRefreshMode>
+        <viewRefreshTime>2</viewRefreshTime>
+        <viewBoundScale>0.9</viewBoundScale>
+        <viewFormat>BBOX=[bboxWest],[bboxSouth],[bboxEast],[bboxNorth]</viewFormat>
+        <httpQuery>client=fastkml</httpQuery>
+      </Link>
+    </NetworkLink>
+    <Placemark>
+      <name>Region and model</name>
+      <TimeStamp>
+        <when>2010-05-28T02:02:09Z</when>
+      </TimeStamp>
+      <Region>
+        <LatLonAltBox>
+          <north>37.5</north>
+          <south>37.3</south>
+          <east>-122.0</east>
+          <west>-122.3</west>
+          <minAltitude>0</minAltitude>
+          <maxAltitude>500</maxAltitude>
+          <altitudeMode>absolute</altitudeMode>
+        </LatLonAltBox>
+        <Lod>
+          <minLodPixels>128</minLodPixels>
+          <maxLodPixels>-1</maxLodPixels>
+          <minFadeExtent>0</minFadeExtent>
+          <maxFadeExtent>64</maxFadeExtent>
+        </Lod>
+      </Region>
+      <Model>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <Location>
+          <longitude>-122.2</longitude>
+          <latitude>37.4</latitude>
+          <altitude>10</altitude>
+        </Location>
+        <Orientation>
+          <heading>45</heading>
+          <tilt>0</tilt>
+          <roll>0</roll>
+        </Orientation>
+        <Scale>
+          <x>1</x>
+          <y>1</y>
+          <z>2</z>
+        </Scale>
+        <Link>
+          <href>model.dae</href>
+        </Link>
+        <ResourceMap>
+          <Alias>
+            <targetHref>texture.jpg</targetHref>
+            <sourceHref>texture.png</sourceHref>
+          </Alias>
+        </ResourceMap>
+      </Model>
+    </Placemark>
+    <Placemark>
+      <name>Parts</name>
+      <MultiGeometry>
+        <Point>
+          <gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>
+          <coordinates>1,1</coordinates>
+        </Point>
+        <Polygon>
+          <extrude>1</extrude>
+          <altitudeMode>relativeToGround</altitudeMode>
+          <outerBoundaryIs>
+            <LinearRing>
+              <extrude>1</extrude>
+              <tessellate>1</tessellate>
+              <altitudeMode>relativeToGround</altitudeMode>
+              <coordinates>0,0,10 4,0,10 4,4,10 0,0,10</coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+          <innerBoundaryIs>
+            <LinearRing>
+              <gx:altitudeOffset>1</gx:altitudeOffset>
+              <gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+              <coordinates>1,1,10 2,1,10 2,2,10 1,1,10</coordinates>
+            </LinearRing>
+          </innerBoundaryIs>
+        </Polygon>
+        <LineString>
+          <gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+          <coordinates>2,2 3,3</coordinates>
+        </LineString>
+        <Polygon>
+          <gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>5,5 6,5 6,6 5,5</coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </MultiGeometry>
+    </Placemark>
+    <PhotoOverlay>
+      <name>Photo</name>
+      <color>ffffffff</color>
+      <drawOrder>1</drawOrder>
+      <Icon>
+        <href>photo.jpg</href>
+      </Icon>
+      <rotation>5</rotation>
+      <ViewVolume>
+        <leftFov>-30</leftFov>
+        <rightFov>30</rightFov>
+        <bottomFov>-20</bottomFov>
+        <topFov>20</topFov>
+        <near>100</near>
+      </ViewVolume>
+      <ImagePyramid>
+        <tileSize>256</tileSize>
+        <maxWidth>4096</maxWidth>
+        <maxHeight>2048</maxHeight>
+        <gridOrigin>upperLeft</gridOrigin>
+      </ImagePyramid>
+      <Point>
+        <coordinates>-122.2,37.4,10</coordinates>
+      </Point>
+      <shape>rectangle</shape>
+    </PhotoOverlay>
+    <ScreenOverlay>
+      <name>Legend</name>
+      <color>7fffffff</color>
+      <drawOrder>2</drawOrder>
+      <Icon>
+        <href>legend.png</href>
+      </Icon>
+      <overlayXY x="0" y="1" xunits="fraction" yunits="fraction"/>
+      <screenXY x="10" y="20" xunits="pixels" yunits="insetPixels"/>
+      <rotationXY x="0.5" y="0.25" xunits="fraction" yunits="fraction"/>
+      <size x="100" y="0.2" xunits="pixels" yunits="fraction"/>
+      <rotation>15</rotation>
+    </ScreenOverlay>
+    <GroundOverlay>
+      <name>Box</name>
+      <Icon>
+        <href>box.png</href>
+        <refreshMode>onExpire</refreshMode>
+        <refreshInterval>60</refreshInterval>
+        <viewRefreshMode>onRegion</viewRefreshMode>
+        <viewRefreshTime>1</viewRefreshTime>
+        <viewBoundScale>1.5</viewBoundScale>
+        <viewFormat>BBOX=[bboxWest],[bboxSouth],[bboxEast],[bboxNorth]</viewFormat>
+        <httpQuery>client=fastkml</httpQuery>
+      </Icon>
+      <altitude>10</altitude>
+      <altitudeMode>absolute</altitudeMode>
+      <LatLonBox>
+        <north>1</north>
+        <south>0</south>
+        <east>1</east>
+        <west>0</west>
+        <rotation>10</rotation>
+      </LatLonBox>
+    </GroundOverlay>
+    <GroundOverlay>
+      <name>Quad</name>
+      <color>ffffffff</color>
+      <drawOrder>3</drawOrder>
+      <Icon>
+        <href>map.png</href>
+      </Icon>
+      <gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>
+      <gx:LatLonQuad>
+        <coordinates>0,0 1,0 1,1 0,1</coordinates>
+      </gx:LatLonQuad>
+    </GroundOverlay>
+    <gx:Tour>
+      <name>Tour</name>
+      <gx:Playlist>
+        <gx:FlyTo>
+          <gx:duration>2.5</gx:duration>
+          <gx:flyToMode>smooth</gx:flyToMode>
+          <Camera>
+            <gx:TimeStamp>
+              <when>2010-05-28T02:02:09Z</when>
+            </gx:TimeStamp>
+            <gx:ViewerOptions>
+              <gx:option name="streetview" enabled="1"/>
+            </gx:ViewerOptions>
+            <longitude>-122.2</longitude>
+            <latitude>37.37</latitude>
+            <altitude>500</altitude>
+            <heading>10</heading>
+            <tilt>45</tilt>
+            <roll>0</roll>
+            <altitudeMode>relativeToGround</altitudeMode>
+          </Camera>
+        </gx:FlyTo>
+        <gx:Wait>
+          <gx:duration>1</gx:duration>
+        </gx:Wait>
+        <gx:SoundCue>
+          <href>sound.mp3</href>
+          <gx:delayedStart>0.5</gx:delayedStart>
+        </gx:SoundCue>
+        <gx:TourControl>
+          <gx:playMode>pause</gx:playMode>
+        </gx:TourControl>
+        <gx:AnimatedUpdate>
+          <gx:duration>3</gx:duration>
+          <Update>
+            <targetHref>https://example.org/tour.kml</targetHref>
+            <Change>
+              <Placemark targetId="p1">
+                <name>Changed</name>
+              </Placemark>
+            </Change>
+            <Create>
+              <Folder targetId="f1">
+                <Placemark>
+                  <name>Created</name>
+                </Placemark>
+              </Folder>
+            </Create>
+            <Delete>
+              <Placemark targetId="p2"/>
+            </Delete>
+          </Update>
+          <gx:delayedStart>1</gx:delayedStart>
+        </gx:AnimatedUpdate>
+      </gx:Playlist>
+    </gx:Tour>
+    <Folder id="folder">
+      <name>Feature fields</name>
+      <visibility>0</visibility>
+      <open>0</open>
+      <atom:author>
+        <atom:name>B. Author</atom:name>
+        <atom:uri>https://example.org/b</atom:uri>
+        <atom:email>b@example.org</atom:email>
+      </atom:author>
+      <atom:link href="https://example.org/folder" rel="related"/>
+      <address>2 Main Street</address>
+      <phoneNumber>+1 555 0101</phoneNumber>
+      <Snippet maxLines="2">Folder summary</Snippet>
+      <description>Folder description</description>
+      <LookAt>
+        <longitude>-122.2</longitude>
+        <latitude>37.37</latitude>
+        <range>500</range>
+        <gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+      </LookAt>
+      <TimeStamp>
+        <when>2010-05-28</when>
+      </TimeStamp>
+      <styleUrl>#m</styleUrl>
+      <Style id="folderStyle">
+        <PolyStyle>
+          <fill>0</fill>
+        </PolyStyle>
+      </Style>
+      <Region>
+        <LatLonAltBox>
+          <north>1</north>
+          <south>0</south>
+          <east>1</east>
+          <west>0</west>
+          <minAltitude>-100</minAltitude>
+          <maxAltitude>0</maxAltitude>
+          <gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>
+        </LatLonAltBox>
+      </Region>
+      <ExtendedData>
+        <Data name="owner">
+          <value>B. Author</value>
+        </Data>
+      </ExtendedData>
+      <gx:balloonVisibility>1</gx:balloonVisibility>
+    </Folder>
+  </Document>
+</kml>

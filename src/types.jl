@@ -113,7 +113,9 @@ end
     gx_altitudeMode::Union{Nothing,Enums.gx_altitudeMode} = nothing
 end
 
-@def feature begin
+# The elements every Feature shares, up to Metadata. GroundOverlay places the altitude
+# elements apart, after its <altitude>, as the KML schema does.
+@def feature_elements begin
     @object
     @option name ::String
     @option visibility ::Bool
@@ -132,6 +134,10 @@ end
     @option Region ::Region
     @option ExtendedData ::ExtendedData
     @option Metadata ::Metadata
+end
+
+@def feature begin
+    @feature_elements
     @altitude_mode_elements
     @option gx_balloonVisibility ::Bool
 end
@@ -370,8 +376,8 @@ end
 
 Base.@kwdef mutable struct Data <: KMLElement{(:name,)}
     @option name::String
-    @option value ::String
     @option displayName ::String
+    @option value ::String
 end
 
 Base.@kwdef mutable struct SimpleData <: KMLElement{(:name,)}
@@ -459,11 +465,11 @@ end
 # ─── Style types ─────────────────────────────────────────────────────────────
 Base.@kwdef mutable struct LineStyle <: ColorStyle
     @colorstyle
+    @option gx_labelVisibility::Bool
     @option width ::Float64
     @option gx_outerColor ::String
     @option gx_outerWidth ::Float64
     @option gx_physicalWidth::Float64
-    @option gx_labelVisibility::Bool
 end
 
 Base.@kwdef mutable struct PolyStyle <: ColorStyle
@@ -560,10 +566,10 @@ end
 Base.@kwdef mutable struct LineString <: Geometry
     @object
     @option gx_altitudeOffset::Float64
+    @option gx_drawOrder::Int
     @option extrude::Bool
     @option tessellate::Bool
     @altitude_mode_elements
-    @option gx_drawOrder::Int
     @option coordinates::Union{Vector{Coord2},Vector{Coord3}}
 end
 
@@ -642,8 +648,13 @@ Base.@kwdef mutable struct Document <: Container
 end
 
 Base.@kwdef mutable struct GroundOverlay <: Overlay
-    @overlay
+    @feature_elements
+    @option gx_balloonVisibility ::Bool
+    @option color ::String
+    @option drawOrder::Int
+    @option Icon ::Icon
     @option altitude ::Float64
+    @altitude_mode_elements
     @option LatLonBox ::LatLonBox
     @option gx_LatLonQuad ::gx_LatLonQuad
 end
