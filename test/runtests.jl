@@ -160,12 +160,35 @@ end
         end
         return out
     end
+    # Metadata keeps the nodes it read, blanks included, and the writer indents them its own
+    # way: the blanks between their elements are left out of the comparison of the models.
+    # The paths above check the content of these nodes.
+    blank(n) = XML.nodetype(n) === XML.Text && all(isspace, XML.value(n))
+    unindented(n) = XML.nodetype(n) !== XML.Element ? n :
+        typeof(n)(n.nodetype, n.tag, n.attributes, n.value, [unindented(c) for c in XML.children(n) if !blank(c)])
+    function unindent!(x)
+        if x isa FastKML.Metadata
+            x.children = [unindented(c) for c in x.children if !blank(c)]
+        elseif x isa FastKML.KMLElement || x isa KMLFile
+            for f in fieldnames(typeof(x))
+                v = getfield(x, f)
+                v isa AbstractVector ? foreach(unindent!, v) : unindent!(v)
+            end
+        end
+        return x
+    end
     # Values FastKML writes even when the source leaves them out.
     always_written = ["/kml/Document/Snippet/@maxLines"]
     namespaces = Dict("gx" => "http://www.google.com/kml/ext/2.2", "atom" => "http://www.w3.org/2005/Atom",
                       "xal" => "urn:oasis:names:tc:ciq:xsdschema:xAL:2.0")
-    @testset "$name" for name in ("kml22_coverage.kml", "gx_Track_example.kml")
-        source = joinpath(@__DIR__, name)
+    # The coverage fixture also as a Windows checkout or another editor may give it: Windows
+    # line ends, and tabs for indentation.
+    windows = tempname() * ".kml"
+    write(windows, replace(replace(read(joinpath(@__DIR__, "kml22_coverage.kml"), String),
+                                   r"(?m)^(?:  )+" => s -> "\t"^(length(s) ÷ 2)), "\n" => "\r\n"))
+    @testset "$name" for (name, source) in (("kml22_coverage.kml", joinpath(@__DIR__, "kml22_coverage.kml")),
+                                            ("kml22_coverage.kml, Windows line ends and tabs", windows),
+                                            ("gx_Track_example.kml", joinpath(@__DIR__, "gx_Track_example.kml")))
         written = tempname() * ".kml"
         FastKML.write(written, read(source, KMLFile))
         s, w = XML.read(source, XML.Node), XML.read(written, XML.Node)
@@ -183,9 +206,10 @@ end
         prefixes = Set(first(split(p, ':')) for path in keys(b) for p in split(path, '/') if occursin(':', p) && !startswith(p, '@'))
         @test sort([p for p in prefixes if get(declared, "xmlns:$p", nothing) != get(namespaces, p, "")]) == String[]
 
-        @test read(written, KMLFile) == read(source, KMLFile)
+        @test unindent!(read(written, KMLFile)) == unindent!(read(source, KMLFile))
         rm(written, force = true)
     end
+    rm(windows, force = true)
 end
 
 @testset "coordinates" begin
@@ -1013,6 +1037,21 @@ end
     @test decode("foo &amp;bar") == "foo &bar"
     @test decode("≤&amp;≥") == "≤&≥"
     @test decode("a b") == "a b"  # multi-byte char with no entities
+end
+
+@testset "Windows line ends" begin
+    # A file with Windows line ends reads like the same file with `\n` ones: XML 1.0 §2.11
+    # turns each `\r\n` into `\n` before the texts are read.
+    kml = join(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<kml xmlns=\"http://www.opengis.net/kml/2.2\">",
+                "  <Document>", "    <Placemark>", "      <name>P</name>",
+                "      <description>line one", "line two</description>",
+                "      <Point><coordinates>1,2</coordinates></Point>", "    </Placemark>", "  </Document>",
+                "</kml>", ""], "\r\n")
+    path = tempname() * ".kml"
+    write(path, kml)
+    @test only(read(path, KMLFile).children[1].Features).description == "line one\nline two"
+    @test first(Tables.rows(PlacemarkTable(read(path, LazyKMLFile)))).description == "line one\nline two"
+    rm(path, force = true)
 end
 
 @testset "gx:Track parsing" begin
