@@ -54,3 +54,66 @@ jobs:
         with:
           allow_reresolve: false
           force_latest_compatible_version: false
+
+  kml22:
+    # The two test fixtures, and the files FastKML writes from them, must validate against
+    # the OGC KML 2.2 schema and Google's gx extension. The tests compare a written file
+    # with its fixture value by value, where `1.0` equals `1`; the schemas reject `1.0` for
+    # an integer. xmllint reads the schemas from the copies made here: a catalog maps the
+    # http addresses of their imports to these copies, and `--nonet` fails on any other
+    # address. With new schemas, change the checksums and the key of the cache together.
+    name: Julia 1 - ubuntu-latest - KML 2.2 schemas
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        id: schemas
+        with:
+          path: ~/kml_schemas
+          key: kml22-schemas-1
+      - name: Download the schemas
+        if: steps.schemas.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/kml_schemas"
+          cd "$HOME/kml_schemas"
+          for url in https://schemas.opengis.net/kml/2.2.0/ogckml22.xsd \
+                     https://schemas.opengis.net/kml/2.2.0/atom-author-link.xsd \
+                     https://docs.oasis-open.org/election/external/xAL.xsd \
+                     https://developers.google.com/kml/schema/kml22gx.xsd; do
+            curl -fsSL --retry 3 -O "$url"
+          done
+      - name: Check the schemas and write their catalog
+        run: |
+          cd "$HOME/kml_schemas"
+          sha256sum -c - <<'EOF'
+          67bb8fd82e7098245360f2aeb2afb561a8eb868ec3660dc06542475f67a4b665  ogckml22.xsd
+          62bb577edde174cfcc68c7edfdab04f49c455d194d83e2dfa9649605126fa884  atom-author-link.xsd
+          cc8353e803f2ccb594cea247b00935477d672f2c5b5affc95a04cb3721a50f0e  xAL.xsd
+          d929409bfc6846c8430317c1c31435e65027882dd87610fc99489b71a1ac013e  kml22gx.xsd
+          EOF
+          cat > catalog.xml <<'EOF'
+          <catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog">
+            <uri name="http://schemas.opengis.net/kml/2.2.0/ogckml22.xsd" uri="ogckml22.xsd"/>
+            <uri name="http://docs.oasis-open.org/election/external/xAL.xsd" uri="xAL.xsd"/>
+          </catalog>
+          EOF
+      - name: Install xmllint
+        run: command -v xmllint || { sudo apt-get update && sudo apt-get install -y libxml2-utils; }
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Write the fixtures with FastKML
+        run: |
+          mkdir -p "$RUNNER_TEMP/written"
+          julia --project=. -e 'using FastKML
+              for f in ARGS
+                  FastKML.write(joinpath(ENV["RUNNER_TEMP"], "written", basename(f)), read(f, KMLFile))
+              end' test/kml22_coverage.kml test/gx_Track_example.kml
+      - name: Validate the fixtures and the written files
+        run: |
+          XML_CATALOG_FILES="$HOME/kml_schemas/catalog.xml" \
+            xmllint --nonet --noout --schema "$HOME/kml_schemas/kml22gx.xsd" \
+            test/kml22_coverage.kml test/gx_Track_example.kml "$RUNNER_TEMP"/written/*.kml
