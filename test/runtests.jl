@@ -39,8 +39,9 @@ end
             n = FastKML.to_xml(o)
             tag = XML.tag(n)
             if !isnothing(tag)
-                # The element is named after the type, up to case and the prefix separator:
-                # `gx_Track` writes <gx:Track>, `AtomAuthor` <atom:author>, `StyleMapPair` <Pair>.
+                # The element is named after the type, up to case and the prefix
+                # separator: `gx_Track` writes <gx:Track>, `AtomAuthor` <atom:author>,
+                # `StyleMapPair` <Pair>.
                 @test occursin(replace(lowercase(tag), ':' => ""), replace(lowercase(string(nameof(T))), '_' => ""))
             end
             o2 = FastKML.object(n)
@@ -116,10 +117,11 @@ end
     end
 
     # ── Written files are KML 2.2 ──
-    # Both fixtures validate against the OGC KML 2.2 schema and Google's gx extension. Every
+    # Both fixtures, and the files written from them, validate against the OGC KML 2.2
+    # schema and Google's gx extension; the CI job "KML 2.2 schemas" checks it. Here, every
     # element and attribute of the source must come back under the same path, as many times,
-    # with the same value up to its spelling (numbers, booleans, date-times), and the
-    # children of each element must keep their order.
+    # with the same value up to its spelling (FastKML writes `500.0` for `500`, `true` for
+    # `1`, `+00:00` for `Z`), and the children of each element must keep their order.
     function paths!(out, node, path = "")
         for c in XML.children(node)
             XML.nodetype(c) === XML.Element || continue
