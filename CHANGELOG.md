@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- **Seven elements of the KML 2.2 schemas that FastKML lost on reading now have fields**, read and written at the place the schemas give them: `gx_rank` in every Feature, `gx_horizFov` in `Camera` and `LookAt`, `extrude` and `tessellate` in `gx_Track`, `altitudeMode` and `gx_altitudeMode` in `gx_MultiTrack`, and `maxSnippetLines` in `ListStyle`. A `<gx:rank>` in a `<Placemark>`, for example, was dropped with the warning `No field named 'gx_rank'`. The positional constructors of these types change with them. Constructors with keywords are unchanged, and take the new fields as options.
+- **`<color>` in a `<BalloonStyle>` is read into `bgColor`.** KML 2.0 named the background of a balloon `<color>`, and KML 2.2 still accepts that form in place of `<bgColor>`, but FastKML lost it with a warning. It now writes it back as `<bgColor>`.
+
 ### Changed
 
 - **FastKML requires XML 0.4.7.** With an earlier version, a file with Windows line ends (`\r\n`) kept them in the texts it read: a `<description>` on two lines came back as `"line one\r\nline two"`, from `read(path, KMLFile)` as from the tables of a `LazyKMLFile`. XML 0.4.7 turns each `\r\n` into `\n` as it reads, as [XML 1.0 §2.11](https://www.w3.org/TR/xml/#sec-line-ends) requires.

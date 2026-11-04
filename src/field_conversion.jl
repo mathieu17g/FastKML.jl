@@ -382,6 +382,9 @@ function map_field_name(parent, field_name::Symbol)::Symbol
         field_name === :w && return :gx_w
         field_name === :h && return :gx_h
     end
+    # KML 2.0 named the background of a balloon <color>, a form KML 2.2 still accepts in
+    # place of <bgColor>.
+    parent isa Types.BalloonStyle && field_name === :color && return :bgColor
     return field_name
 end
 

@@ -18,6 +18,7 @@
       </Change>
     </Update>
     <Camera>
+      <gx:horizFov>60</gx:horizFov>
       <longitude>-122.2</longitude>
       <latitude>37.37</latitude>
       <altitude>-20</altitude>
@@ -36,6 +37,7 @@
     <Snippet maxLines="1">Short summary</Snippet>
     <description>Document description</description>
     <LookAt>
+      <gx:horizFov>45</gx:horizFov>
       <gx:TimeSpan>
         <begin>2010-05-28T02:02:09Z</begin>
         <end>2010-05-28T02:02:56Z</end>
@@ -103,6 +105,7 @@
           <state>open</state>
           <href>open.png</href>
         </ItemIcon>
+        <maxSnippetLines>3</maxSnippetLines>
       </ListStyle>
     </Style>
     <StyleMap id="m">
@@ -130,7 +133,10 @@
     <Placemark>
       <name>Track</name>
       <gx:balloonVisibility>0</gx:balloonVisibility>
+      <gx:rank>0.5</gx:rank>
       <gx:Track>
+        <extrude>1</extrude>
+        <tessellate>1</tessellate>
         <altitudeMode>absolute</altitudeMode>
         <when>2010-05-28T02:02:09Z</when>
         <when>2010-05-28T02:02:35Z</when>
@@ -158,6 +164,7 @@
     <Placemark>
       <name>Tracks</name>
       <gx:MultiTrack>
+        <altitudeMode>absolute</altitudeMode>
         <gx:interpolate>1</gx:interpolate>
         <gx:Track>
           <gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>
@@ -344,6 +351,7 @@
     </ScreenOverlay>
     <GroundOverlay>
       <name>Box</name>
+      <gx:rank>1</gx:rank>
       <Icon>
         <href>box.png</href>
         <refreshMode>onExpire</refreshMode>
