@@ -160,6 +160,13 @@ function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::Abst
         # Scalar field
         try
             converted_value = convert_field_value(value_str, field_type, true_field_name)
+            # The value of an altitude mode goes to the enumeration that includes it,
+            # whatever its element: when that changes the element written, say it.
+            if true_field_name === :altitudeMode && converted_value !== nothing &&
+               startswith(original_tag, "gx:") != (converted_value isa Enums.gx_altitudeMode)
+                element = converted_value isa Enums.gx_altitudeMode ? "gx:altitudeMode" : "altitudeMode"
+                @warn "<$original_tag> holds $(repr(value_str)), a value of <$element>: it is written as <$element>"
+            end
             setfield!(parent, true_field_name, converted_value)
         catch e
             if e isa FieldConversionError

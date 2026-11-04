@@ -143,7 +143,16 @@ function object(node::XMLAnyNode)
     if sym in ENUM_NAMES_SET
         text_content = extract_text_content_fast(node)
         if !isempty(text_content)
-            return getproperty(Enums, sym)(text_content)
+            # A value outside the enumeration of the element gives `nothing` rather than
+            # failing the whole read. For a child element, the field assignment that follows
+            # reads the text again: it warns and leaves the field empty, or, for an altitude
+            # mode, finds the value in the other enumeration.
+            try
+                return getproperty(Enums, sym)(text_content)
+            catch e
+                e isa ErrorException || rethrow()
+                return nothing
+            end
         else
             @warn "Enum tag <$(XML.tag(node))> did not contain text content."
             return nothing
