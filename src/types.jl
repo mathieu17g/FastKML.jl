@@ -249,6 +249,10 @@ end
 Base.@kwdef mutable struct Icon <: Object
     @object
     @option href ::String
+    @option gx_x ::Int
+    @option gx_y ::Int
+    @option gx_w ::Int
+    @option gx_h ::Int
     @option refreshMode ::Enums.refreshMode
     @option refreshInterval::Float64
     @option viewRefreshMode::Enums.viewRefreshMode
@@ -256,10 +260,6 @@ Base.@kwdef mutable struct Icon <: Object
     @option viewBoundScale ::Float64
     @option viewFormat ::String
     @option httpQuery ::String
-    @option x ::Int
-    @option y ::Int
-    @option w ::Int
-    @option h ::Int
 end
 
 Base.@kwdef mutable struct Orientation <: Object

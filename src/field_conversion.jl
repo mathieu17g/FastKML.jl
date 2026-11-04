@@ -374,6 +374,14 @@ function map_field_name(parent, field_name::Symbol)::Symbol
             return :end_
         end
     end
+    # KML 2.0 named the offsets of an icon in a palette <x>, <y>, <w>, <h>. KML 2.2 names
+    # them <gx:x>, <gx:y>, <gx:w>, <gx:h>, and Icon keeps them in fields of these names.
+    if parent isa Types.Icon
+        field_name === :x && return :gx_x
+        field_name === :y && return :gx_y
+        field_name === :w && return :gx_w
+        field_name === :h && return :gx_h
+    end
     return field_name
 end
 

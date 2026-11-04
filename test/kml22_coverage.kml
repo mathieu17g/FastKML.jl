@@ -63,6 +63,10 @@
         <heading>90</heading>
         <Icon>
           <href>icon.png</href>
+          <gx:x>32</gx:x>
+          <gx:y>64</gx:y>
+          <gx:w>32</gx:w>
+          <gx:h>32</gx:h>
         </Icon>
         <hotSpot x="0.5" y="0" xunits="fraction" yunits="fraction"/>
       </IconStyle>
