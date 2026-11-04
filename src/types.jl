@@ -140,6 +140,7 @@ end
     @feature_elements
     @altitude_mode_elements
     @option gx_balloonVisibility ::Bool
+    @option gx_rank ::Float64
 end
 
 @def colorstyle begin
@@ -496,6 +497,7 @@ Base.@kwdef mutable struct ListStyle <: SubStyle
     @option listItemType::Enums.listItemType
     @option bgColor ::String
     @option ItemIcons ::Vector{ItemIcon}
+    @option maxSnippetLines::Int
 end
 
 Base.@kwdef mutable struct BalloonStyle <: SubStyle
@@ -531,6 +533,7 @@ end
 # ─── View types ──────────────────────────────────────────────────────────────
 Base.@kwdef mutable struct Camera <: AbstractView
     @object
+    @option gx_horizFov ::Float64
     @option TimePrimitive ::TimePrimitive
     @option gx_ViewerOptions ::gx_ViewerOptions
     @option longitude ::Float64
@@ -544,6 +547,7 @@ end
 
 Base.@kwdef mutable struct LookAt <: AbstractView
     @object
+    @option gx_horizFov ::Float64
     @option TimePrimitive ::TimePrimitive
     @option gx_ViewerOptions ::gx_ViewerOptions
     @option longitude ::Float64
@@ -608,6 +612,8 @@ end
 
 Base.@kwdef mutable struct gx_Track <: Geometry
     @object
+    @option extrude ::Bool
+    @option tessellate ::Bool
     @altitude_mode_elements
     @option when ::Vector{Union{TimeZones.ZonedDateTime,Dates.Date,String}}
     @option gx_coord ::Union{Vector{Coord2},Vector{Coord3}}
@@ -619,6 +625,7 @@ end
 
 Base.@kwdef mutable struct gx_MultiTrack <: Geometry
     @object
+    @altitude_mode_elements
     @option gx_interpolate::Bool
     @option gx_Track ::Vector{gx_Track}
 end
@@ -650,6 +657,7 @@ end
 Base.@kwdef mutable struct GroundOverlay <: Overlay
     @feature_elements
     @option gx_balloonVisibility ::Bool
+    @option gx_rank ::Float64
     @option color ::String
     @option drawOrder::Int
     @option Icon ::Icon

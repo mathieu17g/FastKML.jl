@@ -1442,6 +1442,13 @@ end
         @test (icon.gx_x, icon.gx_y, icon.gx_w, icon.gx_h) == (64, 128, 32, 16)
         @test XML.tag.(XML.children(FastKML.to_xml(icon))) == ["href", "gx:x", "gx:y", "gx:w", "gx:h"]
     end
+
+    # The background of a balloon: KML 2.0 named it <color>, a form KML 2.2 still accepts in
+    # place of <bgColor>. It is read into bgColor, and written as <bgColor>.
+    balloon = @test_logs min_level = Logging.Warn FastKML.object(XML.parse(
+        "<BalloonStyle><color>ffccf1ff</color><text>\$[name]</text></BalloonStyle>", XML.Node)[1])
+    @test balloon.bgColor == "ffccf1ff"
+    @test XML.tag.(XML.children(FastKML.to_xml(balloon))) == ["bgColor", "text"]
 end
 
 @testset "Atom elements" begin
