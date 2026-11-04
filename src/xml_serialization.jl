@@ -90,7 +90,10 @@ end
 
 function _push_field!(children::Vector{FNode}, field::Symbol, declared::Type, val)
     if field === :innerBoundaryIs
-        push!(children, _element("innerBoundaryIs", FNode[Node(ring) for ring in val]))
+        # One <innerBoundaryIs> per hole: the schema gives each a single <LinearRing>.
+        for ring in val
+            push!(children, _element("innerBoundaryIs", FNode[Node(ring)]))
+        end
     elseif field === :outerBoundaryIs
         push!(children, _element("outerBoundaryIs", FNode[Node(val)]))
     elseif field === :coordinates
