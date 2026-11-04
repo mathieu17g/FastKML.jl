@@ -8,7 +8,7 @@ import XML
 import ..Types: KMLElement, TAG_TO_TYPE, typemap, KMLFile, NoAttributes, tagsym, XMLAnyNode
 import ..Types  # Import all types
 import ..Enums
-import ..FieldConversion: assign_field!, assign_complex_object!, handle_polygon_boundary!
+import ..FieldConversion: assign_field!, assign_complex_object!, handle_polygon_boundary!, map_field_name
 import ..Macros: @for_each_immediate_child, @find_immediate_child, @count_immediate_children
 import ..Coordinates: coordinate_string
 
@@ -224,7 +224,8 @@ function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
         assign_field!(parent, field_name_sym, child_parsed_val, XML.tag(child_xml_node))
         return
     else
-        field_name_sym = tagsym(XML.tag(child_xml_node))
+        # An enumeration, such as <gx:altitudeMode>, may go to a field of another name.
+        field_name_sym = map_field_name(parent, tagsym(XML.tag(child_xml_node)))
 
         # Special handling for Polygon boundaries
         if parent isa Types.Polygon && (field_name_sym === :outerBoundaryIs || field_name_sym === :innerBoundaryIs)

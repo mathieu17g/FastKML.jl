@@ -66,7 +66,15 @@ function Node(o::T, tag::AbstractString = typetag(T)) where {names, T<:KMLElemen
     for field in fieldnames(T)
         field in names && continue
         val = getfield(o, field)
-        val === nothing || _push_field!(children, field, declared[field], val)
+        val === nothing && continue
+        # Metadata and ExtendedData share one place in a KML 2.2 Feature, and Metadata is
+        # deprecated: a Feature that has both is written with its ExtendedData only.
+        if field === :Metadata && hasfield(T, :ExtendedData) && getfield(o, :ExtendedData) !== nothing
+            @warn "Metadata and ExtendedData share one place in KML 2.2, and Metadata is deprecated: " *
+                  "this $(nameof(T)) is written without its Metadata"
+            continue
+        end
+        _push_field!(children, field, declared[field], val)
     end
     return FNode(XML.Element, tag, _build_attrs(o), nothing, children)
 end
@@ -115,6 +123,9 @@ function _push_field!(children::Vector{FNode}, field::Symbol, declared::Type, va
                 push!(children, _text_element(kmlname(field), _text(item)))
             end
         end
+    elseif val isa Enums.gx_altitudeMode
+        # The field of an altitude mode writes a gx value as <gx:altitudeMode>.
+        push!(children, _text_element("gx:altitudeMode", _text(val)))
     else
         # Simple values and enumerations are named after their field: `key`, `state`, `gx:flyToMode`.
         push!(children, _text_element(kmlname(field), _text(val)))

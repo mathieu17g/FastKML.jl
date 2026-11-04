@@ -54,7 +54,9 @@ function convert_field_value(value::String, target_type::Type, field_name::Symbo
             
         # Enum types
         elseif actual_type <: Enums.AbstractKMLEnum
-            return isempty(value) && Nothing <: target_type ? nothing : actual_type(value)
+            # `convert` rather than a call: the field of an altitude mode takes two
+            # enumerations.
+            return isempty(value) && Nothing <: target_type ? nothing : convert(actual_type, value)
             
         # Coordinate types
         elseif field_name === :coordinates || field_name === :gx_coord
@@ -106,6 +108,13 @@ function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::Abst
     if !hasfield(typeof(parent), true_field_name)
         @warn "No field named '$field_name' (or mapped '$true_field_name') in $(typeof(parent)) for tag <$original_tag>"
         return
+    end
+
+    # <altitudeMode> and <gx:altitudeMode> share one place in KML 2.2: a source that gives
+    # both keeps <altitudeMode>, in either order.
+    if true_field_name === :altitudeMode && getfield(parent, :altitudeMode) !== nothing
+        @warn "<altitudeMode> and <gx:altitudeMode> share one place in KML 2.2: $(nameof(typeof(parent))) keeps <altitudeMode>"
+        startswith(original_tag, "gx:") && return
     end
     
     # Get field type information
@@ -385,6 +394,8 @@ function map_field_name(parent, field_name::Symbol)::Symbol
     # KML 2.0 named the background of a balloon <color>, a form KML 2.2 still accepts in
     # place of <bgColor>.
     parent isa Types.BalloonStyle && field_name === :color && return :bgColor
+    # <gx:altitudeMode> shares the place of <altitudeMode> in KML 2.2, and its field.
+    field_name === :gx_altitudeMode && return :altitudeMode
     return field_name
 end
 
