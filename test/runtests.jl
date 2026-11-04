@@ -288,6 +288,32 @@ end
     @test link.refreshMode === nothing
 end
 
+@testset "Empty elements" begin
+    # The KML 2.2 schemas allow an empty string, URI or coordinate list. Such an element is
+    # read without a warning, and a string keeps "" so that the element is written back.
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+      <Placemark><name/><description></description><styleUrl/>
+        <LineString><coordinates></coordinates></LineString></Placemark>
+      <NetworkLink><Link><href/></Link></NetworkLink>
+    </Document></kml>"""
+    file = @test_logs min_level = Logging.Warn parse(KMLFile, kml)
+    placemark, networklink = file.children[1].Features
+    @test (placemark.name, placemark.description, placemark.styleUrl) == ("", "", "")
+    @test placemark.Geometry.coordinates === nothing
+    @test networklink.Link.href == ""
+    @test XML.tag.(XML.children(FastKML.to_xml(placemark))) == ["name", "description", "styleUrl", "LineString"]
+    # A boolean, a number or an enumeration cannot be empty: the element is left out, with
+    # one warning.
+    @testset "<$tag/> in a $parent" for (parent, tag) in
+            (("Placemark", "visibility"), ("LineStyle", "width"), ("Point", "altitudeMode"))
+        o = @test_logs (:warn, Regex("<$tag> is empty")) min_level = Logging.Warn FastKML.object(
+            XML.parse("<$parent><$tag/></$parent>", XML.Node)[1])
+        @test getfield(o, Symbol(tag)) === nothing
+    end
+end
+
 @testset "coordinates" begin
     # `coordinates` are single coordinate (2D or 3D)
     s = "<Point><coordinates>1,2,3</coordinates></Point>"

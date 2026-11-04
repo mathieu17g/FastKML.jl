@@ -175,6 +175,7 @@
     </Placemark>
     <Placemark>
       <name>Line</name>
+      <description/>
       <ExtendedData>
         <Data name="kind">
           <displayName>Kind</displayName>

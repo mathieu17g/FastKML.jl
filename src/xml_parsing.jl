@@ -154,18 +154,21 @@ function object(node::XMLAnyNode)
                 return nothing
             end
         else
-            @warn "Enum tag <$(XML.tag(node))> did not contain text content."
-            return nothing
+            # An empty enumeration: the field assignment warns once (`_assign_empty!`).
+            return ""
         end
     end
 
     # ──  3. Simple leaf tags (handled if object() is called on them directly)
     if XML.is_simple(node)
-        text_content = extract_text_content_fast(node)
-        return isempty(text_content) ? nothing : text_content
+        return extract_text_content_fast(node)
     end
 
-    # ──  4. Fallback ─────────────────────────────────────────────────────────────
+    # ──  4. An element without content, such as <name/>: the field assignment decides
+    #        whether its value may be empty (`_assign_empty!`).
+    isempty(XML.children(node)) && return ""
+
+    # ──  5. Fallback ─────────────────────────────────────────────────────────────
     return _object_slow(node)
 end
 
@@ -230,7 +233,11 @@ function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
         return
     elseif child_parsed_val isa AbstractString
         field_name_sym = tagsym(XML.tag(child_xml_node))
-        assign_field!(parent, field_name_sym, child_parsed_val, XML.tag(child_xml_node))
+        if isempty(child_parsed_val)
+            _assign_empty!(parent, field_name_sym, XML.tag(child_xml_node))
+        else
+            assign_field!(parent, field_name_sym, child_parsed_val, XML.tag(child_xml_node))
+        end
         return
     else
         # An enumeration, such as <gx:altitudeMode>, may go to a field of another name.
@@ -258,6 +265,25 @@ function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
 
         @warn "Unhandled tag $field_name_sym (from XML <$(XML.tag(child_xml_node))>) for parent $(typeof(parent))"
     end
+end
+
+# An empty element, such as <name/>. The KML 2.2 schemas allow an empty string, URI or
+# coordinate list: a string field keeps "", so that the element is written back, and the
+# other fields stay empty. A boolean, a number or an enumeration cannot be empty: the
+# element is left out, with a warning.
+function _assign_empty!(parent::KMLElement, field_name_sym::Symbol, tag::AbstractString)
+    field = map_field_name(parent, field_name_sym)
+    if !hasfield(typeof(parent), field)
+        @warn "No field named '$field_name_sym' (or mapped '$field') in $(typeof(parent)) for tag <$tag>"
+        return
+    end
+    T = typemap(typeof(parent))[field]
+    if T === String
+        setfield!(parent, field, "")
+    elseif T <: Union{Bool,Number,Enums.AbstractKMLEnum}
+        @warn "<$tag> is empty, which KML 2.2 does not allow for its value: it is left out"
+    end
+    return
 end
 
 # ─── Helper functions ────────────────────────────────────────────────────────
