@@ -210,6 +210,20 @@ end
         rm(written, force = true)
     end
     rm(windows, force = true)
+
+    # FastKML wrote all the holes of a polygon in one <innerBoundaryIs>, where the schema
+    # allows a single ring. A polygon written that way still reads all its holes, and is
+    # written again with one <innerBoundaryIs> per hole.
+    polygon = FastKML.object(XML.parse("""
+        <Polygon>
+          <outerBoundaryIs><LinearRing><coordinates>0,0 4,0 4,4 0,0</coordinates></LinearRing></outerBoundaryIs>
+          <innerBoundaryIs>
+            <LinearRing><coordinates>1,1 2,1 2,2 1,1</coordinates></LinearRing>
+            <LinearRing><coordinates>3,1 3.5,1 3.5,1.5 3,1</coordinates></LinearRing>
+          </innerBoundaryIs>
+        </Polygon>""", XML.Node)[1])
+    @test length(polygon.innerBoundaryIs) == 2
+    @test XML.tag.(XML.children(FastKML.to_xml(polygon))) == ["outerBoundaryIs", "innerBoundaryIs", "innerBoundaryIs"]
 end
 
 @testset "coordinates" begin
