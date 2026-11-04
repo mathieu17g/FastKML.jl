@@ -224,6 +224,18 @@ end
         </Polygon>""", XML.Node)[1])
     @test length(polygon.innerBoundaryIs) == 2
     @test XML.tag.(XML.children(FastKML.to_xml(polygon))) == ["outerBoundaryIs", "innerBoundaryIs", "innerBoundaryIs"]
+
+    # The KML 2.2 schemas give an altitude mode to geometries, views and GroundOverlay,
+    # but not to the other Features, and no icon to a gx:Track. The model has no such
+    # fields, so the writer cannot produce them, and a file that has them loses them on
+    # reading, with a warning.
+    @test [T for T in FastKML.all_concrete_subtypes(FastKML.Feature)
+           if hasfield(T, :altitudeMode) || hasfield(T, :gx_altitudeMode)] == [FastKML.GroundOverlay]
+    @test !hasfield(FastKML.gx_Track, :Icon)
+    @test_logs (:warn, r"Unhandled tag altitudeMode") FastKML.object(XML.parse(
+        "<Placemark><altitudeMode>absolute</altitudeMode></Placemark>", XML.Node)[1])
+    @test_logs (:warn, r"Could not assign .*Icon") FastKML.object(XML.parse(
+        "<gx:Track><Icon><href>track.png</href></Icon></gx:Track>", XML.Node)[1])
 end
 
 @testset "coordinates" begin

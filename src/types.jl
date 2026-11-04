@@ -113,9 +113,8 @@ end
     gx_altitudeMode::Union{Nothing,Enums.gx_altitudeMode} = nothing
 end
 
-# The elements every Feature shares, up to Metadata. GroundOverlay places the altitude
-# elements apart, after its <altitude>, as the KML schema does.
-@def feature_elements begin
+# The elements every Feature shares.
+@def feature begin
     @object
     @option name ::String
     @option visibility ::Bool
@@ -134,11 +133,6 @@ end
     @option Region ::Region
     @option ExtendedData ::ExtendedData
     @option Metadata ::Metadata
-end
-
-@def feature begin
-    @feature_elements
-    @altitude_mode_elements
     @option gx_balloonVisibility ::Bool
     @option gx_rank ::Float64
 end
@@ -620,7 +614,6 @@ Base.@kwdef mutable struct gx_Track <: Geometry
     @option gx_angles ::Vector{String}
     @option Model ::Model
     @option ExtendedData::ExtendedData
-    @option Icon ::Icon
 end
 
 Base.@kwdef mutable struct gx_MultiTrack <: Geometry
@@ -655,12 +648,7 @@ Base.@kwdef mutable struct Document <: Container
 end
 
 Base.@kwdef mutable struct GroundOverlay <: Overlay
-    @feature_elements
-    @option gx_balloonVisibility ::Bool
-    @option gx_rank ::Float64
-    @option color ::String
-    @option drawOrder::Int
-    @option Icon ::Icon
+    @overlay
     @option altitude ::Float64
     @altitude_mode_elements
     @option LatLonBox ::LatLonBox
