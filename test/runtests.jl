@@ -1416,6 +1416,18 @@ end
     ls = FastKML.object(XML.parse(
         "<ListStyle><listItemType>checkHideChildren</listItemType></ListStyle>", XML.Node)[1])
     @test ls.listItemType == FastKML.Enums.listItemType("checkHideChildren")
+
+    # The offsets of an icon in a palette: KML 2.2 names them <gx:x>, <gx:y>, <gx:w>, <gx:h>,
+    # KML 2.0 named them <x>, <y>, <w>, <h>. Both forms are read into the same fields, and
+    # the KML 2.2 form is written, right after <href>.
+    @testset "Icon offsets, $form" for (form, offsets) in
+            (("KML 2.2", "<gx:x>64</gx:x><gx:y>128</gx:y><gx:w>32</gx:w><gx:h>16</gx:h>"),
+             ("KML 2.0", "<x>64</x><y>128</y><w>32</w><h>16</h>"))
+        icon = @test_logs min_level = Logging.Warn FastKML.object(XML.parse(
+            "<Icon><href>root://icons/palette-4.png</href>$offsets</Icon>", XML.Node)[1])
+        @test (icon.gx_x, icon.gx_y, icon.gx_w, icon.gx_h) == (64, 128, 32, 16)
+        @test XML.tag.(XML.children(FastKML.to_xml(icon))) == ["href", "gx:x", "gx:y", "gx:w", "gx:h"]
+    end
 end
 
 @testset "Atom elements" begin
