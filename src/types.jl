@@ -108,9 +108,10 @@ end
     @option targetId ::String
 end
 
+# <altitudeMode> and <gx:altitudeMode> share one place in KML 2.2, so they share one field:
+# the type of its value decides which element is written.
 @def altitude_mode_elements begin
-    altitudeMode::Union{Nothing,Enums.altitudeMode} = nothing
-    gx_altitudeMode::Union{Nothing,Enums.gx_altitudeMode} = nothing
+    altitudeMode::Union{Nothing,Enums.altitudeMode,Enums.gx_altitudeMode} = nothing
 end
 
 # The elements every Feature shares.

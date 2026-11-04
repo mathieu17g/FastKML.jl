@@ -229,13 +229,38 @@ end
     # but not to the other Features, and no icon to a gx:Track. The model has no such
     # fields, so the writer cannot produce them, and a file that has them loses them on
     # reading, with a warning.
-    @test [T for T in FastKML.all_concrete_subtypes(FastKML.Feature)
-           if hasfield(T, :altitudeMode) || hasfield(T, :gx_altitudeMode)] == [FastKML.GroundOverlay]
+    @test [T for T in FastKML.all_concrete_subtypes(FastKML.Feature) if hasfield(T, :altitudeMode)] ==
+          [FastKML.GroundOverlay]
     @test !hasfield(FastKML.gx_Track, :Icon)
     @test_logs (:warn, r"Unhandled tag altitudeMode") FastKML.object(XML.parse(
         "<Placemark><altitudeMode>absolute</altitudeMode></Placemark>", XML.Node)[1])
     @test_logs (:warn, r"Could not assign .*Icon") FastKML.object(XML.parse(
         "<gx:Track><Icon><href>track.png</href></Icon></gx:Track>", XML.Node)[1])
+end
+
+@testset "Altitude modes" begin
+    # <altitudeMode> and <gx:altitudeMode> share one place in KML 2.2. One field holds the
+    # value, from either enumeration, and the value decides which element is written.
+    @test isempty([T for T in FastKML.all_concrete_subtypes(FastKML.KMLElement) if hasfield(T, :gx_altitudeMode)])
+    for (source, value, written) in
+            (("<altitudeMode>absolute</altitudeMode>", FastKML.Enums.altitudeMode("absolute"), "altitudeMode"),
+             ("<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>",
+              FastKML.Enums.gx_altitudeMode("relativeToSeaFloor"), "gx:altitudeMode"))
+        ls = @test_logs min_level = Logging.Warn FastKML.object(XML.parse("<LineString>$source</LineString>", XML.Node)[1])
+        @test ls.altitudeMode == value
+        @test XML.tag.(XML.children(FastKML.to_xml(ls))) == [written]
+    end
+    # A source that gives both keeps <altitudeMode>, with a warning, in either order.
+    @testset "both, $first first" for (first, both) in
+            (("altitudeMode", "<altitudeMode>absolute</altitudeMode><gx:altitudeMode>clampToSeaFloor</gx:altitudeMode>"),
+             ("gx:altitudeMode", "<gx:altitudeMode>clampToSeaFloor</gx:altitudeMode><altitudeMode>absolute</altitudeMode>"))
+        ls = @test_logs (:warn, r"share one place") FastKML.object(XML.parse("<LineString>$both</LineString>", XML.Node)[1])
+        @test ls.altitudeMode == FastKML.Enums.altitudeMode("absolute")
+    end
+    # A text given in code goes to the enumeration whose values include it. In a file, the
+    # element's own enumeration reads the value.
+    @test FastKML.Point(altitudeMode = "clampToSeaFloor").altitudeMode == FastKML.Enums.gx_altitudeMode("clampToSeaFloor")
+    @test FastKML.Point(altitudeMode = "absolute").altitudeMode == FastKML.Enums.altitudeMode("absolute")
 end
 
 @testset "coordinates" begin
@@ -1388,6 +1413,14 @@ end
 
     # Empty constructor sanity check
     @test isempty(FastKML.Metadata().children)
+
+    # Metadata and ExtendedData share one place in a KML 2.2 Feature, and Metadata is
+    # deprecated: a Feature that has both is written with its ExtendedData only, with a
+    # warning.
+    both = FastKML.object(XML.parse("""<Placemark><Metadata><a>1</a></Metadata>
+        <ExtendedData><Data name="k"><value>v</value></Data></ExtendedData></Placemark>""", XML.Node)[1])
+    node = @test_logs (:warn, r"Metadata") FastKML.to_xml(both)
+    @test XML.tag.(XML.children(node)) == ["ExtendedData"]
 end
 
 @testset "gx:ViewerOptions / gx:option (Google extension)" begin

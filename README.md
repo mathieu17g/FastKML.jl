@@ -142,7 +142,8 @@ intuitively alongside [Google's KML Reference](https://developers.google.com/kml
    ERROR: altitudeMode ∉ clampToGround, relativeToGround, absolute
    ```
 8. Google extensions (anything with `gx:` in the name) replace `:` with `_`.
-   - E.g. `gx:altitudeMode` → `gx_altitudeMode`.
+   - E.g. `gx:balloonVisibility` → `gx_balloonVisibility`.
+   - One exception: `<gx:altitudeMode>` shares the place of `<altitudeMode>` in KML 2.2, and its field, `altitudeMode`, which takes an `Enums.altitudeMode` or an `Enums.gx_altitudeMode`.
 
 <br>
 

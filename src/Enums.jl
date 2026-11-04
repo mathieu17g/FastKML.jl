@@ -97,6 +97,11 @@ end
 
 # Define all other KML enums
 @kml_enum gx_altitudeMode relativeToSeaFloor clampToSeaFloor
+
+# The field of an altitude mode takes either enumeration, whose values are disjoint: a text
+# goes to the one whose values include it.
+Base.convert(::Type{Union{altitudeMode,gx_altitudeMode}}, x::String) =
+    x == "relativeToSeaFloor" || x == "clampToSeaFloor" ? gx_altitudeMode(x) : altitudeMode(x)
 @kml_enum refreshMode onChange onInterval onExpire
 @kml_enum viewRefreshMode never onStop onRequest onRegion
 @kml_enum shape rectangle cylinder sphere
