@@ -257,10 +257,35 @@ end
         ls = @test_logs (:warn, r"share one place") FastKML.object(XML.parse("<LineString>$both</LineString>", XML.Node)[1])
         @test ls.altitudeMode == FastKML.Enums.altitudeMode("absolute")
     end
-    # A text given in code goes to the enumeration whose values include it. In a file, the
-    # element's own enumeration reads the value.
+    # A text goes to the enumeration whose values include it, in code as in a file.
     @test FastKML.Point(altitudeMode = "clampToSeaFloor").altitudeMode == FastKML.Enums.gx_altitudeMode("clampToSeaFloor")
     @test FastKML.Point(altitudeMode = "absolute").altitudeMode == FastKML.Enums.altitudeMode("absolute")
+    # Google's KML reference also gives <gx:altitudeMode> the values of <altitudeMode>, and
+    # uses <gx:altitudeMode>clampToGround</gx:altitudeMode> as its example; the KML 2.2
+    # schemas give each element its own values only. In a file, the value is read whatever
+    # its element, and written in the element of its enumeration, with a warning.
+    @testset "<$tag>$value</$tag>" for (tag, value, written) in
+            (("gx:altitudeMode", "clampToGround", "altitudeMode"),
+             ("altitudeMode", "relativeToSeaFloor", "gx:altitudeMode"))
+        ls = @test_logs (:warn, Regex("written as <$written>")) min_level = Logging.Warn FastKML.object(
+            XML.parse("<LineString><$tag>$value</$tag></LineString>", XML.Node)[1])
+        @test string(ls.altitudeMode) == value
+        @test XML.tag.(XML.children(FastKML.to_xml(ls))) == [written]
+    end
+end
+
+@testset "Enumerations" begin
+    # A value outside its enumeration is left out, with a warning, and the rest of the file
+    # is read: one such value does not fail the whole read.
+    kml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <kml xmlns="http://www.opengis.net/kml/2.2"><Document><NetworkLink>
+      <Link><href>a.kml</href><refreshMode>bogus</refreshMode></Link>
+    </NetworkLink></Document></kml>"""
+    file = @test_logs (:warn, r"refreshMode") min_level = Logging.Warn parse(KMLFile, kml)
+    link = only(file.children[1].Features).Link
+    @test link.href == "a.kml"
+    @test link.refreshMode === nothing
 end
 
 @testset "coordinates" begin
