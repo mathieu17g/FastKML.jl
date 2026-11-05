@@ -4,6 +4,7 @@ export parse_iso8601
 
 # ─── base deps ────────────────────────────────────────────────────────────────
 using Dates, TimeZones, Automa
+using ..ContentWarnings: @content_warn
 
 # Define regex patterns for ISO 8601 formats
 const digit = re"[0-9]"
@@ -141,7 +142,7 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     hint = quick_format_check(s)
     
     if hint == :invalid
-        warn && @warn "Unable to parse as ISO 8601: string too short" input=s
+        warn && @content_warn (:iso8601, :too_short) "Unable to parse as ISO 8601: string too short" input=s
         return String(s)
     end
     
@@ -182,14 +183,14 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     end
     
     if format === nothing
-        warn && @warn "Unable to parse as ISO 8601: format not recognized" input=s
+        warn && @content_warn (:iso8601, :format) "Unable to parse as ISO 8601: format not recognized" input=s
         return String(s)
     end
     
     try
         return parse_by_format(s, format)
     catch e
-        warn && @warn "Unable to parse as ISO 8601: parsing failed" input=s format=format exception=e
+        warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=format exception=e
         return String(s)
     end
 end

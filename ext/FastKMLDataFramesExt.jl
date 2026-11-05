@@ -43,8 +43,11 @@ function DataFrames.DataFrame(
     layer::Union{Nothing,String,Integer,Symbol} = nothing,
     simplify_single_parts::Bool = false,
 )
-    placemark_table = FastKML.PlacemarkTable(kml_file; layer = layer, simplify_single_parts = simplify_single_parts)
-    return DataFrames.DataFrame(placemark_table)
+    # The warnings about the content come once per kind, for the whole table.
+    return FastKML.ContentWarnings.with_content_warnings() do
+        placemark_table = FastKML.PlacemarkTable(kml_file; layer = layer, simplify_single_parts = simplify_single_parts)
+        DataFrames.DataFrame(placemark_table)
+    end
 end
 
 """

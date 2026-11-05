@@ -7,6 +7,7 @@ import ..Types: KMLElement, KMLFile, LazyKMLFile, Document, XMLAnyNode, StyleMap
                 AtomLink, typemap
 import ..Enums
 import ..Coordinates: coordinate_string
+using ..ContentWarnings: @content_warn
 
 # ─── KML names ───────────────────────────────────────────────────────────────
 # A field or type name stands for a KML name: a namespace prefix gets its colon back
@@ -70,7 +71,7 @@ function Node(o::T, tag::AbstractString = typetag(T)) where {names, T<:KMLElemen
         # Metadata and ExtendedData share one place in a KML 2.2 Feature, and Metadata is
         # deprecated: a Feature that has both is written with its ExtendedData only.
         if field === :Metadata && hasfield(T, :ExtendedData) && getfield(o, :ExtendedData) !== nothing
-            @warn "Metadata and ExtendedData share one place in KML 2.2, and Metadata is deprecated: " *
+            @content_warn (:metadata_left_out, nameof(T)) "Metadata and ExtendedData share one place in KML 2.2, and Metadata is deprecated: " *
                   "this $(nameof(T)) is written without its Metadata"
             continue
         end

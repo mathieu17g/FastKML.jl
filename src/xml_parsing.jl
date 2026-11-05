@@ -9,6 +9,7 @@ import ..Types: KMLElement, TAG_TO_TYPE, typemap, KMLFile, NoAttributes, tagsym,
 import ..Types  # Import all types
 import ..Enums
 import ..FieldConversion: assign_field!, assign_complex_object!, handle_polygon_boundary!, map_field_name
+using ..ContentWarnings: @content_warn, with_content_warnings
 import ..Macros: @for_each_immediate_child, @find_immediate_child, @count_immediate_children
 import ..Coordinates: coordinate_string
 
@@ -56,7 +57,10 @@ function extract_text_content_fast(node::XMLAnyNode)
 end
 
 # ─── Parse KMLFile from XML document ─────────────────────────────────────────
-function parse_kmlfile(doc::XMLAnyNode)
+# A whole read: the warnings about the content come once per kind (`with_content_warnings`).
+parse_kmlfile(doc::XMLAnyNode) = with_content_warnings(() -> _parse_kmlfile(doc))
+
+function _parse_kmlfile(doc::XMLAnyNode)
     kml_element = @find_immediate_child doc x (XML.nodetype(x) === XML.Element && XML.tag(x) == "kml")
     isnothing(kml_element) && error("No <kml> tag found in file.")
     
@@ -202,7 +206,7 @@ function _object_slow(node::XMLAnyNode)
             "via reflection in `_object_slow`. This is a fallback and less efficient.\n" *
             "ACTION: To improve performance and maintainability, ensure that the tag `'$original_tag_name'` " *
             "correctly maps to the Julia type in the `TAG_TO_TYPE` dictionary."
-        end
+        end _id = (:reflection, sym) maxlog = 1
 
         # Object instantiation logic - need to find the type in the Types module
         T = if hasproperty(Types, sym)
@@ -220,7 +224,7 @@ function _object_slow(node::XMLAnyNode)
     end
 
     # Path 3: Fallthrough - truly unhandled or unrecognized tag
-    @warn "Unhandled Tag: `'$original_tag_name'` (symbol: `:$sym`). This tag was not recognized."
+    @content_warn (:unhandled_tag, String(original_tag_name)) "Unhandled Tag: `'$original_tag_name'` (symbol: `:$sym`). This tag was not recognized."
     return nothing
 end
 
@@ -263,7 +267,7 @@ function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
             return
         end
 
-        @warn "Unhandled tag $field_name_sym (from XML <$(XML.tag(child_xml_node))>) for parent $(typeof(parent))"
+        @content_warn (:unhandled_child, field_name_sym, nameof(typeof(parent))) "Unhandled tag $field_name_sym (from XML <$(XML.tag(child_xml_node))>) for parent $(typeof(parent))"
     end
 end
 
@@ -274,14 +278,14 @@ end
 function _assign_empty!(parent::KMLElement, field_name_sym::Symbol, tag::AbstractString)
     field = map_field_name(parent, field_name_sym)
     if !hasfield(typeof(parent), field)
-        @warn "No field named '$field_name_sym' (or mapped '$field') in $(typeof(parent)) for tag <$tag>"
+        @content_warn (:no_field, nameof(typeof(parent)), String(tag)) "No field named '$field_name_sym' (or mapped '$field') in $(typeof(parent)) for tag <$tag>"
         return
     end
     T = typemap(typeof(parent))[field]
     if T === String
         setfield!(parent, field, "")
     elseif T <: Union{Bool,Number,Enums.AbstractKMLEnum}
-        @warn "<$tag> is empty, which KML 2.2 does not allow for its value: it is left out"
+        @content_warn (:empty, String(tag)) "<$tag> is empty, which KML 2.2 does not allow for its value: it is left out"
     end
     return
 end

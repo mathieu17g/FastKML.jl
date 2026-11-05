@@ -314,6 +314,37 @@ end
     end
 end
 
+@testset "Content warnings" begin
+    # A warning about the content of a file comes once per kind. On Julia 1.11 and later, a
+    # read, a write or a DataFrame counts each kind, and warns when it ends, with the number
+    # of elements; elsewhere, and on Julia 1.10, each kind is shown once per session.
+    summarizes = isdefined(Base, :ScopedValues)
+    warnings(f) = (logger = Test.TestLogger(min_level = Logging.Warn); Logging.with_logger(f, logger); logger.logs)
+    document(placemark) = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2"><Document>$(placemark^3)</Document></kml>"""
+    @testset "$what" for (what, run, pattern) in (
+            ("read", () -> parse(KMLFile, document("<Placemark><foo>1</foo></Placemark>")), "No field named 'foo'"),
+            ("write", () -> write(IOBuffer(), parse(KMLFile, document(
+                 "<Placemark><Metadata><a>1</a></Metadata><ExtendedData/></Placemark>"))), "Metadata"),
+            ("DataFrame", () -> (path = tempname() * ".kml";
+                 write(path, document("<Placemark><Point><coordinates>1,2,3,4,5</coordinates></Point></Placemark>"));
+                 DataFrame(path)), "not a multiple of 2 or 3"))
+        logs = warnings(run)
+        @test length(logs) == 1
+        @test occursin(pattern, logs[1].message)
+        if summarizes
+            @test logs[1].kwargs[:elements] == 3
+        else
+            @test endswith(logs[1].message, "(shown once per session)")
+        end
+    end
+    # Each read gives its own count; on Julia 1.10, the kind stays silent after its first
+    # time.
+    twice = warnings(() -> foreach(_ -> parse(KMLFile, document("<Placemark><foo>1</foo></Placemark>")), 1:2))
+    @test length(twice) == (summarizes ? 2 : 1)
+end
+
 @testset "coordinates" begin
     # `coordinates` are single coordinate (2D or 3D)
     s = "<Point><coordinates>1,2,3</coordinates></Point>"
