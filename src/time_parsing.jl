@@ -142,7 +142,7 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     hint = quick_format_check(s)
     
     if hint == :invalid
-        warn && @content_warn (:iso8601, :too_short) "Unable to parse as ISO 8601: string too short" input=s
+        warn && @content_warn (:iso8601, :too_short) "Unable to parse as ISO 8601: string too short" input=s example=s
         return String(s)
     end
     
@@ -183,14 +183,14 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     end
     
     if format === nothing
-        warn && @content_warn (:iso8601, :format) "Unable to parse as ISO 8601: format not recognized" input=s
+        warn && @content_warn (:iso8601, :format) "Unable to parse as ISO 8601: format not recognized" input=s example=s
         return String(s)
     end
     
     try
         return parse_by_format(s, format)
     catch e
-        warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=format exception=e
+        warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=format exception=e example=s
         return String(s)
     end
 end

@@ -338,11 +338,35 @@ end
         else
             @test endswith(logs[1].message, "(shown once per session)")
         end
+        @test !haskey(logs[1].kwargs, :examples)   # the three elements are alike
     end
     # Each read gives its own count; on Julia 1.10, the kind stays silent after its first
     # time.
     twice = warnings(() -> foreach(_ -> parse(KMLFile, document("<Placemark><foo>1</foo></Placemark>")), 1:2))
     @test length(twice) == (summarizes ? 2 : 1)
+
+    # The elements of one kind can differ in the value that the warning shows, here their
+    # coordinates: the warning then gives the number of distinct values and the first three.
+    points(texts) = join("<Placemark><Point><coordinates>$t</coordinates></Point></Placemark>" for t in texts)
+    logs = warnings(() -> parse(KMLFile, document(points(("1", "1,2,3,4,5", "1", "1,2,3,4,5,6,7", "1,2,3,4,5,6,7,8,9,10,11")))))
+    @test length(logs) == 1
+    if summarizes
+        @test logs[1].kwargs[:elements] == 15
+        @test logs[1].kwargs[:distinct] == 4
+        @test logs[1].kwargs[:examples] == ("1", "1,2,3,4,5", "1,2,3,4,5,6,7")
+    else
+        @test !haskey(logs[1].kwargs, :examples)
+    end
+    # The count stops at 100 values.
+    @testset "$n values" for (n, distinct) in ((99, 99), (100, Base.Text("100 or more")))
+        logs = warnings(() -> parse(KMLFile, document(points("1,2,3,4,$i" for i in 1:n))))
+        @test length(logs) == 1
+        summarizes && @test logs[1].kwargs[:distinct] == distinct
+    end
+    # Outside a read, the warning does not show the value noted for the count.
+    logs = warnings(() -> FastKML.object(XML.parse("<Point><coordinates>1</coordinates></Point>", XML.Node)[1]))
+    @test length(logs) == 1
+    @test !haskey(logs[1].kwargs, :example)
 end
 
 @testset "coordinates" begin

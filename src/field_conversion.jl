@@ -143,7 +143,7 @@ function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::Abst
             end
         catch e
             if e isa FieldConversionError
-                @content_warn (:coordinate_conversion, nameof(typeof(parent)), true_field_name) "Failed to convert coordinate field $true_field_name: $(e.message)" value=value_str
+                @content_warn (:coordinate_conversion, nameof(typeof(parent)), true_field_name) "Failed to convert coordinate field $true_field_name: $(e.message)" value=value_str example=value_str
                 if Nothing <: field_type
                     setfield!(parent, true_field_name, nothing)
                 end
@@ -166,12 +166,12 @@ function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::Abst
             if true_field_name === :altitudeMode && converted_value !== nothing &&
                startswith(original_tag, "gx:") != (converted_value isa Enums.gx_altitudeMode)
                 element = converted_value isa Enums.gx_altitudeMode ? "gx:altitudeMode" : "altitudeMode"
-                @content_warn (:altitude_element, String(original_tag)) "<$original_tag> holds $(repr(value_str)), a value of <$element>: it is written as <$element>"
+                @content_warn (:altitude_element, String(original_tag)) "<$original_tag> holds $(repr(value_str)), a value of <$element>: it is written as <$element>" example=value_str
             end
             setfield!(parent, true_field_name, converted_value)
         catch e
             if e isa FieldConversionError
-                @content_warn (:conversion, nameof(typeof(parent)), true_field_name) "Failed to convert value for field $true_field_name: $(e.message)" value=value_str
+                @content_warn (:conversion, nameof(typeof(parent)), true_field_name) "Failed to convert value for field $true_field_name: $(e.message)" value=value_str example=value_str
                 # Set to nothing if optional, otherwise use fallback
                 if Nothing <: field_type
                     setfield!(parent, true_field_name, nothing)
@@ -263,7 +263,7 @@ function handle_polygon_boundary!(polygon, boundary_node::XMLAnyNode, boundary_t
         else
             # Count children for better error message
             element_count = @count_immediate_children boundary_node c (XML.nodetype(c) === XML.Element)
-            @content_warn (:outer_boundary,) "<outerBoundaryIs> expected <LinearRing>, found $element_count element(s)"
+            @content_warn (:outer_boundary,) "<outerBoundaryIs> expected <LinearRing>, found $element_count element(s)" example=element_count
         end
         
     elseif boundary_type === :innerBoundaryIs
@@ -360,7 +360,7 @@ function convert_coordinates(value::String, actual_type::Type, original_type::Ty
             return convert(actual_type, parsed_coords[1])
         else
             # Take first coordinate with warning
-            @content_warn (:one_coordinate,) "Expected 1 coordinate, got $(length(parsed_coords)). Using first."
+            @content_warn (:one_coordinate,) "Expected 1 coordinate, got $(length(parsed_coords)). Using first." example=length(parsed_coords)
             return convert(actual_type, parsed_coords[1])
         end
     # Vector coordinate types (LineString, LinearRing)
@@ -461,12 +461,12 @@ function assign_vector_element!(parent, field_name::Symbol, field_type::Type, ve
         if converted_value !== nothing || Nothing <: el_type
             push!(current_vector, converted_value)
         elseif !isempty(value)
-            @content_warn (:vector_push, field_name) "Could not push non-empty value '$value' to vector field $field_name"
+            @content_warn (:vector_push, field_name) "Could not push non-empty value '$value' to vector field $field_name" example=value
         end
         
     catch e
         if e isa FieldConversionError
-            @content_warn (:vector_conversion, field_name) "Failed to convert vector element for field $field_name: $(e.message)" value=value
+            @content_warn (:vector_conversion, field_name) "Failed to convert vector element for field $field_name: $(e.message)" value=value example=value
         else
             rethrow(e)
         end

@@ -145,7 +145,7 @@ function parse_coordinates_automa(txt::AbstractString)
     else # len is not 0 and not a multiple of 2 or 3
         if !isempty(txt) && !all(isspace, txt)
             snippet = first(txt, min(50, lastindex(txt)))
-            @content_warn (:coordinate_count,) "Parsed $len numbers from \"$snippet…\", which is not a multiple of 2 or 3. Returning empty coordinates."
+            @content_warn (:coordinate_count,) "Parsed $len numbers from \"$snippet…\", which is not a multiple of 2 or 3. Returning empty coordinates." example=snippet
         end
         return SVector{0,Float64}[] # Return empty instead of erroring
     end
