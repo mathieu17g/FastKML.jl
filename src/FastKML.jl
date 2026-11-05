@@ -10,6 +10,7 @@ using TimeZones, Dates
 include("macros.jl")
 
 # Include all modules in dependency order
+include("content_warnings.jl")
 include("Enums.jl")
 include("types.jl")
 include("Coordinates.jl")

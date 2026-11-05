@@ -9,6 +9,7 @@ import XML
 import ..Types: KMLFile, LazyKMLFile, KMLElement
 import ..XMLParsing: parse_kmlfile
 import ..XMLSerialization: Node
+import ..ContentWarnings: with_content_warnings
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  KMx File Types
@@ -94,11 +95,11 @@ Base.parse(::Type{LazyKMLFile}, s::AbstractString) = LazyKMLFile(XML.parse(s, XM
 # ─────────────────────────────────────────────────────────────────────────────
 
 function Base.write(io::Base.IO, o::Writable; kw...)
-    XML.write(io, Node(o); kw...)
+    XML.write(io, with_content_warnings(() -> Node(o)); kw...)
 end
 
 function Base.write(path::AbstractString, o::Writable; kw...)
-    XML.write(path, Node(o); kw...)
+    XML.write(path, with_content_warnings(() -> Node(o)); kw...)
 end
 
 Base.write(o::Writable; kw...) = Base.write(stdout, o; kw...)
