@@ -84,6 +84,19 @@ file = KMLFile(
 </kml>
 ```
 
+### With XML.jl
+
+XML.jl exports a `Document` too: the node type of a whole XML document. After `using FastKML, XML`, import FastKML's `Document`, the KML element, by name. `children` needs nothing: FastKML adds its methods to `XML.children`, which works on KML objects and on XML nodes alike.
+
+```julia
+using FastKML, XML
+using FastKML: Document
+
+file = read(path, KMLFile)
+doc = only(children(file))
+doc isa Document   # true
+```
+
 <br>
 
 ## Tables, DataFrames, GeoInterface

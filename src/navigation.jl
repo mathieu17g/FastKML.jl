@@ -13,13 +13,16 @@ import ..Types: KMLFile, LazyKMLFile, KMLElement, Feature, Document, Folder, Pla
                 gx_Tour, gx_Playlist, gx_TourPrimitive,
                 Update, AbstractUpdateOperation
 import XML
+# These methods extend `XML.children`, so that `using FastKML, XML` leaves one `children`.
+import XML: children
 
 # ─── KML Navigation Functions ────────────────────────────────────────────────
 
 """
     children(element)
 
-Get the logical children of a KML element.
+Get the logical children of a KML element. These are methods of `XML.children`, which
+gives the child nodes of an XML node: after `using FastKML, XML`, `children` works on both.
 - For `KMLFile`: returns all children (KMLElements and XML nodes)
 - For `Document`/`Folder`: returns the Features vector
 - For `Placemark`: returns the Geometry (if present)
