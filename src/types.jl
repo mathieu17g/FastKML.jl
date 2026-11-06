@@ -993,9 +993,23 @@ function _create_field_map_cache()
     return cache
 end
 
+# `Base.nonnothingtype` of each field type of the KML types and, for a vector field, of its
+# element type, and of each of these results: on a type known only at run time, as when a
+# field is read, `Base.nonnothingtype` is slow and allocates.
+function _create_nonnothing_cache()
+    cache = IdDict{Any,Type}()
+    note!(T) = (nn = Base.nonnothingtype(T); cache[T] = nn; cache[nn] = nn)
+    for T in all_concrete_subtypes(KMLElement), ft in fieldtypes(T)
+        nn = note!(ft)
+        nn !== Union{} && nn <: AbstractVector && note!(eltype(nn))
+    end
+    return cache
+end
+
 # Create the caches at module initialization
 const _TAGSYM_CACHE = _create_tagsym_cache()
 const _FIELD_MAP_CACHE = _create_field_map_cache()
+const _NONNOTHING_CACHE = _create_nonnothing_cache()
 
 # Thread-safe, read-only access functions
 function tagsym(x::AbstractString)
@@ -1010,5 +1024,11 @@ function typemap(::Type{T}) where {T<:KMLElement}
     _FIELD_MAP_CACHE[T]
 end
 typemap(o::KMLElement) = typemap(typeof(o))
+
+# `Base.nonnothingtype(T)`, from the cache when `T` is the type of a KML field.
+function nonnothing_type(@nospecialize(T::Type))
+    nn = get(_NONNOTHING_CACHE, T, nothing)
+    return nn === nothing ? Base.nonnothingtype(T) : nn
+end
 
 end # module Types
