@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Removed
 
 - **Fields that KML 2.2 does not allow at their place are gone**: `altitudeMode` and `gx_altitudeMode` of `Placemark`, `Document`, `Folder`, `NetworkLink`, `PhotoOverlay`, `ScreenOverlay` and `gx_Tour`, and `Icon` of `gx_Track`. The KML 2.2 schemas allow no altitude mode in these Features, unlike `GroundOverlay`, and no icon in a track, so a written file that used one of these fields was invalid. A file that has these elements there loses them on reading, with a warning, like any other element without a field. The positional constructors of these types change with them.
+- **FastKML no longer exports `typemap`, `TAG_TO_TYPE`, `all_concrete_subtypes`, `@kml_enum` and `NoAttributes`.** It exported every name of its `Types` and `Enums` modules, these five too, though only its own code needs them. They remain reachable with the module prefix, such as `FastKML.typemap`.
 
 ### Fixed
 

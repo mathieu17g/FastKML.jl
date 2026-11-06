@@ -101,6 +101,19 @@ end
     code = "using FastKML, XML; using FastKML: Document; print(Document === FastKML.Document, children === XML.children)"
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "truetrue"
+
+    # FastKML exports the types of its model and its enumerations, and not what only its
+    # own code needs: functions, tables, the macro that defines the enumerations, and the
+    # supertypes `NoAttributes` and `AbstractKMLEnum`. These keep a qualified name, such as
+    # `FastKML.typemap`.
+    internal = (:NoAttributes, :AbstractKMLEnum)
+    for m in (FastKML.Types, FastKML.Enums)
+        api = filter(n -> getglobal(m, n) isa Type && !(n in internal), names(m))
+        @test all(n -> Base.isexported(FastKML, n), api)
+        others = setdiff(names(m), api)
+        @test isempty(filter(n -> Base.isexported(FastKML, n), others))
+        @test all(n -> isdefined(FastKML, n), others)
+    end
 end
 
 
