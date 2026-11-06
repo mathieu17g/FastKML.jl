@@ -254,8 +254,7 @@ function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
         end
 
         # Check if it's a simple field that needs text extraction
-        if hasfield(typeof(parent), field_name_sym) &&
-           Base.nonnothingtype(fieldtype(typeof(parent), field_name_sym)) === String
+        if get(typemap(typeof(parent)), field_name_sym, nothing) === String
 
             text_content_for_field = extract_text_content_fast(child_xml_node)
             assign_field!(parent, field_name_sym, text_content_for_field, XML.tag(child_xml_node))

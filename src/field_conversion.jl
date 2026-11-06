@@ -7,7 +7,7 @@ using TimeZones
 using Dates
 using StaticArrays  # For StaticArray type checking
 import ..Types
-import ..Types: Coord2, Coord3, tagsym, XMLAnyNode
+import ..Types: Coord2, Coord3, tagsym, XMLAnyNode, nonnothing_type
 import ..Enums
 using ..ContentWarnings: @content_warn
 import ..Coordinates: parse_coordinates_automa
@@ -35,7 +35,7 @@ function convert_field_value(value::String, target_type::Type, field_name::Symbo
     end
     
     # Get the non-nothing type for conversion
-    actual_type = Base.nonnothingtype(target_type)
+    actual_type = nonnothing_type(target_type)
     
     try
         # String types
@@ -91,7 +91,7 @@ function convert_field_value_vector(value::String, element_type::Type, field_nam
         return nothing
     end
     
-    actual_type = Base.nonnothingtype(element_type)
+    actual_type = nonnothing_type(element_type)
     
     # For vector elements, use the same conversion logic
     return convert_field_value(value, actual_type, field_name)
@@ -413,7 +413,7 @@ function is_simple_vector_type(vec_type::Type)
     end
     
     el_type = eltype(vec_type)
-    actual_el_type = Base.nonnothingtype(el_type)
+    actual_el_type = nonnothing_type(el_type)
     
     # Exclude coordinate types - they need special parsing
     if actual_el_type <: Union{Coord2, Coord3}

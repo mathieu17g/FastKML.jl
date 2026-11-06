@@ -51,6 +51,32 @@ end
     end
 end
 
+@testset "Field type caches" begin
+    # The reader takes field types without `Nothing` from caches built once, rather than
+    # from `Base.nonnothingtype` at each element: `typemap` for each field of each KML type,
+    # and `nonnothing_type` for field types and the element types of vector fields.
+    nonnothing_type = FastKML.Types.nonnothing_type
+    differ = Any[]
+    for T in FastKML.all_concrete_subtypes(FastKML.KMLElement), (fn, ft) in zip(fieldnames(T), fieldtypes(T))
+        nn = Base.nonnothingtype(ft)
+        FastKML.typemap(T)[fn] === nn || push!(differ, (T, fn))
+        nonnothing_type(ft) === nn && nonnothing_type(nn) === nn || push!(differ, (T, ft))
+        if nn !== Union{} && nn <: AbstractVector
+            nonnothing_type(eltype(nn)) === Base.nonnothingtype(eltype(nn)) || push!(differ, (T, eltype(nn)))
+        end
+    end
+    @test isempty(differ)
+    # Any other type gives the answer of `Base.nonnothingtype`.
+    @test nonnothing_type(Union{Nothing, Int8, UInt8}) === Union{Int8, UInt8}
+    # The type of a field is found without allocating.
+    if Base.JLOptions().code_coverage == 0
+        allocs(T) = @allocated FastKML.Types.nonnothing_type(T)
+        coordinates = fieldtype(FastKML.Point, :coordinates)
+        allocs(coordinates)
+        @test allocs(coordinates) == 0
+    end
+end
+
 @testset "Exported names" begin
     # A name exported by both FastKML and Base, bound to different things, is ambiguous after
     # `using FastKML`: an error under Julia 1.13, a warning under 1.10.
