@@ -461,6 +461,9 @@ end
         count += 1
     end
     @test count == length(file)
+    # `collect` needs the element type of a KMLFile, which is that of its children.
+    @test eltype(KMLFile) == eltype(kids)
+    @test collect(file) == kids
 
     # Test indexing
     @test file[1] == kids[1]
