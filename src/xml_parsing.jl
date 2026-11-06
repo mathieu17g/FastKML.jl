@@ -90,7 +90,11 @@ function Types.KMLFile(lazy::Types.LazyKMLFile)
 end
 
 # ─── Main object parsing ─────────────────────────────────────────────────────
-const ENUM_NAMES_SET = Set(names(Enums; all = true))
+# A tag names an enumeration only when it names one of the enum TYPES. `names(Enums; all)`
+# also lists the module's own functions and the macro that defines the enumerations, such as
+# `include` and `eval`; resolving a tag to one of those would call it with the element's
+# text. The set holds the concrete subtypes of `AbstractKMLEnum`.
+const ENUM_NAMES_SET = Set(nameof(T) for T in Types.all_concrete_subtypes(Enums.AbstractKMLEnum))
 
 """
 Main entry point for parsing XML nodes into KML objects.
@@ -177,12 +181,14 @@ function object(node::XMLAnyNode)
 end
 
 const KML_NAMES_SET = let
-    # Collect all names from Types module
+    # The names of the KML TYPES declared in `Types`. `names(Types; all)` lists the module's
+    # functions and tables too, such as `typemap` and `TAG_TO_TYPE`; a tag must resolve only
+    # to a type, never to a function that `_object_slow` would then call.
     all_names = Set{Symbol}()
     for name in names(Types; all = true, imported = false)
-        if !startswith(string(name), "_") && name != :Types
-            push!(all_names, name)
-        end
+        startswith(string(name), "_") && continue
+        name === :Types && continue
+        isdefined(Types, name) && getglobal(Types, name) isa Type && push!(all_names, name)
     end
     all_names
 end
