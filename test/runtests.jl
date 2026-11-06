@@ -63,6 +63,18 @@ end
     code = "using FastKML; print(size([1, 2]))"
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "(2,)"
+
+    # Nor with XML.jl, which a KML user may load too. There, `Document` alone is bound to
+    # two things, a KML element here and a node type there: the README imports it by name.
+    clashes = filter(names(FastKML)) do n
+        n !== :Document && Base.isexported(FastKML, n) && Base.isexported(XML, n) &&
+            !(isdefined(FastKML, n) && getglobal(FastKML, n) === getglobal(XML, n))
+    end
+    @test isempty(clashes)
+
+    code = "using FastKML, XML; using FastKML: Document; print(Document === FastKML.Document, children === XML.children)"
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    @test read(cmd, String) == "truetrue"
 end
 
 
