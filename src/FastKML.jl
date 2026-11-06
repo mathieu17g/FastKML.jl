@@ -44,16 +44,18 @@ export unwrap_single_part_multigeometry
 export PlacemarkTable, list_layers, get_layer_names, get_num_layers
 export coordinate_string, Coord2, Coord3
 
-# Export all type names from Types module
+# Export the types of `Types`, but neither `NoAttributes`, the supertype of the elements
+# without attributes, nor its functions and tables, which keep a qualified name such as
+# `FastKML.typemap`
 for name in names(Types; all=false)
-    if name != :Types && name != :eval && name != :include
+    if getglobal(Types, name) isa Type && name != :NoAttributes
         @eval export $name
     end
 end
 
-# Export all enum types
+# Export the enumerations, but neither their supertype nor the macro that defines them
 for name in names(Enums; all=false)
-    if name != :Enums && name != :AbstractKMLEnum
+    if getglobal(Enums, name) isa Type && name != :AbstractKMLEnum
         @eval export $name
     end
 end
