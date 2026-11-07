@@ -6,7 +6,7 @@ export KMLElement, NoAttributes, Object, Feature, Overlay, Container, Geometry,
        # Coordinate types
        Coord2, Coord3,
        # Time types
-       TimeStamp, TimeSpan, gx_TimeStamp, gx_TimeSpan,
+       TimeStamp, TimeSpan, gx_TimeStamp, gx_TimeSpan, PartialDate,
        # Component types
        Link, Icon, Orientation, Location, Scale, Lod, LatLonBox, LatLonAltBox,
        Region, gx_LatLonQuad, gx_ViewerOptions, gx_option, hotSpot,
@@ -47,6 +47,58 @@ import ..Enums
 # Coordinate type aliases
 const Coord2 = SVector{2,Float64}
 const Coord3 = SVector{3,Float64}
+
+# ─── Partial dates ───────────────────────────────────────────────────────────
+"""
+    PartialDate(year)
+    PartialDate(year, month)
+
+A date known to its year, or to its year and month, as a time element of KML may give it:
+`1997` (`xsd:gYear`) or `1997-07` (`xsd:gYearMonth`), the examples of `<when>` in the KML
+reference. FastKML reads such a value as a `PartialDate`, and writes it back as it read it.
+
+A `PartialDate` covers every day of its year or month, which `dates(d)` gives: take
+`last(dates(d))` for the end of a period, such as `<end>1997</end>`, and `first(dates(d))`,
+or `Date(d)`, for its beginning. `year(d)` and `month(d)` give its fields, `month(d)` being
+`nothing` for a year alone.
+"""
+struct PartialDate
+    year::Int64
+    month::Int8  # 0 for a year alone
+    PartialDate(year::Integer) = new(year, 0)
+    function PartialDate(year::Integer, month::Integer)
+        1 <= month <= 12 || throw(ArgumentError("Month: $month out of range (1:12)"))
+        return new(year, month)
+    end
+end
+
+Dates.year(d::PartialDate) = d.year
+Dates.month(d::PartialDate) = d.month == 0 ? nothing : Int(d.month)
+Dates.Date(d::PartialDate) = Date(d.year, max(Int(d.month), 1))
+
+"""
+    dates(d::PartialDate)
+
+The days that `d` covers, from the first to the last: `Date(1997, 7, 1):Day(1):Date(1997, 7,
+31)` for `PartialDate(1997, 7)`.
+"""
+function dates(d::PartialDate)
+    first = Date(d)
+    return first:Day(1):(d.month == 0 ? lastdayofyear(first) : lastdayofmonth(first))
+end
+
+# The text of KML: four digits of year at least, then two of month
+function Base.print(io::IO, d::PartialDate)
+    d.year < 0 && print(io, '-')
+    print(io, lpad(abs(d.year), 4, '0'))
+    d.month == 0 || print(io, '-', lpad(d.month, 2, '0'))
+end
+function Base.show(io::IO, d::PartialDate)
+    show(io, PartialDate)
+    print(io, '(', d.year)
+    d.month == 0 || print(io, ", ", d.month)
+    print(io, ')')
+end
 
 # ─── Base infrastructure ─────────────────────────────────────────────────────
 const TAG_TO_TYPE = Dict{Symbol,DataType}()
@@ -192,13 +244,13 @@ end
 # ─── Time types ──────────────────────────────────────────────────────────────
 Base.@kwdef mutable struct TimeStamp <: TimePrimitive
     @object
-    @option when ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
+    @option when ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}
 end
 
 Base.@kwdef mutable struct TimeSpan <: TimePrimitive
     @object
-    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
-    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
+    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}
+    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}
 end
 
 # Google extension: same shape as TimeStamp / TimeSpan but used inside
@@ -208,13 +260,13 @@ end
 # routes <gx:TimeStamp> / <gx:TimeSpan> there automatically.
 Base.@kwdef mutable struct gx_TimeStamp <: TimePrimitive
     @object
-    @option when ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
+    @option when ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}
 end
 
 Base.@kwdef mutable struct gx_TimeSpan <: TimePrimitive
     @object
-    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
-    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
+    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}
+    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}
 end
 
 # ─── Component types ─────────────────────────────────────────────────────────
@@ -610,7 +662,7 @@ Base.@kwdef mutable struct gx_Track <: Geometry
     @option extrude ::Bool
     @option tessellate ::Bool
     @altitude_mode_elements
-    @option when ::Vector{Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}}
+    @option when ::Vector{Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}}
     @option gx_coord ::Union{Vector{Coord2},Vector{Coord3}}
     @option gx_angles ::Vector{String}
     @option Model ::Model

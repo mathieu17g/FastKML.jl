@@ -6,7 +6,7 @@ import Tables
 import ..Layers: get_layer_info, select_layer, DirectPlacemarks
 import ..Types: KMLFile, LazyKMLFile, Feature, Document, Folder, Placemark, Geometry,
                 LinearRing, Point, LineString, Polygon, MultiGeometry, Coord2, Coord3,
-                gx_Track, XMLAnyNode
+                gx_Track, XMLAnyNode, PartialDate
 import ..XMLParsing: object, extract_text_content_fast
 import ..Macros: @find_immediate_child, @for_each_immediate_child
 import ..HtmlEntities: decode_named_entities
@@ -200,7 +200,7 @@ function _cursor_parse_geometry(c::Cursor, geom_tag)
         return MultiGeometry(; Geometries = isempty(geometries) ? nothing : geometries)
 
     elseif geom_tag == "gx:Track"
-        when_vals = Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}[]
+        when_vals = Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}[]
         coord_vals = Coord3[]
         @for_each_child c ch begin
             if XML.nodetype(ch) === XML.Element
@@ -355,7 +355,7 @@ function parse_geometry_lazy(geom_node::XMLAnyNode)
         # path — users who need them should read the file as a `KMLFile`
         # (eager). 2D <gx:coord> entries are promoted to 3D with alt = 0 so
         # the field stays homogeneous as `Vector{Coord3}`.
-        when_vals = Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}[]
+        when_vals = Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,PartialDate,String}[]
         coord_vals = Coord3[]
 
         @for_each_immediate_child geom_node child begin
