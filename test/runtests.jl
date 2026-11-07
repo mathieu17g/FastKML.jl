@@ -1127,6 +1127,22 @@ end
     # `when` / `begin` / `end` (not the original strings).
     @test pms[1].TimePrimitive !== nothing
     @test pms[2].TimePrimitive !== nothing
+
+    # A date-time without a time zone, which `xsd:dateTime` allows, is read as a `DateTime`
+    # in each time element, and written as it was read.
+    @testset "$element" for (element, inner, value) in (
+            ("TimeStamp", "<TimeStamp><when>2024-02-28T10:00:00</when></TimeStamp>", pm -> pm.TimePrimitive.when),
+            ("TimeSpan", "<TimeSpan><begin>2024-02-28T10:00:00</begin></TimeSpan>", pm -> pm.TimePrimitive.begin_),
+            ("gx:TimeStamp", "<Camera><gx:TimeStamp><when>2024-02-28T10:00:00</when></gx:TimeStamp></Camera>",
+             pm -> pm.AbstractView.TimePrimitive.when),
+            ("gx:TimeSpan", "<LookAt><gx:TimeSpan><end>2024-02-28T10:00:00</end></gx:TimeSpan></LookAt>",
+             pm -> pm.AbstractView.TimePrimitive.end_))
+        local_file = parse(KMLFile, """
+            <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+              <Document><Placemark>$inner</Placemark></Document></kml>""")
+        @test value(only(FastKML.Utils.find_placemarks(local_file))) === DateTime(2024, 2, 28, 10)
+        @test occursin(">2024-02-28T10:00:00<", sprint(FastKML.write, local_file))
+    end
 end
 
 @testset "ZipArchives extension (KMZ)" begin
@@ -1435,6 +1451,23 @@ end
     @test lazy_track.gx_coord[end] ≈ SVector(-122.203207, 37.374857, 140.199997)
     @test lazy_track.when[1] isa TimeZones.ZonedDateTime
     @test lazy_track.ExtendedData === nothing  # documented lazy-path limitation
+
+    # ── <when> without a time zone, which `xsd:dateTime` allows: a `DateTime`, next to the
+    #    times that have one, on the eager path, in the table and on its lazy reference ──
+    local_kml = """
+        <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+          <Document><Placemark><gx:Track>
+            <when>2010-05-28T02:02:09Z</when><when>2010-05-28T02:02:35</when>
+            <gx:coord>1 2 3</gx:coord><gx:coord>4 5 6</gx:coord>
+          </gx:Track></Placemark></Document></kml>"""
+    # `Dates` promotes neither type to the other: the vector says it holds both.
+    times = Any[ZonedDateTime(2010, 5, 28, 2, 2, 9, tz"UTC"), DateTime(2010, 5, 28, 2, 2, 35)]
+    @test only(FastKML.Utils.find_placemarks(parse(KMLFile, local_kml))).Geometry.when == times
+    TB = FastKML.TablesBridge
+    local_lazy = parse(LazyKMLFile, local_kml)
+    @test only(collect(TB._placemark_iterator(local_lazy, nothing))).geometry.when == times
+    @test only(collect(TB.EagerLazyPlacemarkIterator(FastKML.Layers.select_layer(local_lazy, nothing)))).geometry.when ==
+          times
 end
 
 @testset "gx:TimeStamp / gx:TimeSpan in AbstractView" begin

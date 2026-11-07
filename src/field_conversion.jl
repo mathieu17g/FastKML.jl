@@ -377,14 +377,10 @@ function convert_coordinates(value::String, actual_type::Type, original_type::Ty
     end
 end
 
-function is_time_primitive_type(T::Type)
-    T == Union{TimeZones.ZonedDateTime, Dates.Date, String} ||
-    T == Union{Dates.Date, TimeZones.ZonedDateTime, String} ||
-    T == Union{TimeZones.ZonedDateTime, String, Dates.Date} ||
-    T == Union{String, TimeZones.ZonedDateTime, Dates.Date} ||
-    T == Union{Dates.Date, String, TimeZones.ZonedDateTime} ||
-    T == Union{String, Dates.Date, TimeZones.ZonedDateTime}
-end
+# The type of a time field without `Nothing`. Julia orders the types of a `Union` itself, so
+# one comparison covers every order in which a field may write them.
+is_time_primitive_type(T::Type) =
+    T == Union{TimeZones.ZonedDateTime, Dates.DateTime, Dates.Date, String}
 
 function map_field_name(parent, field_name::Symbol)::Symbol
     # `begin` and `end` are Julia reserved keywords — TimeSpan and gx_TimeSpan
@@ -438,14 +434,8 @@ function is_simple_vector_type(vec_type::Type)
            is_time_primitive_element_type(el_type)
 end
 
-function is_time_primitive_element_type(T::Type)
-    T == Union{TimeZones.ZonedDateTime, Dates.Date, String} ||
-    T == Union{Dates.Date, TimeZones.ZonedDateTime, String} ||
-    T == Union{TimeZones.ZonedDateTime, String, Dates.Date} ||
-    T == Union{String, TimeZones.ZonedDateTime, Dates.Date} ||
-    T == Union{Dates.Date, String, TimeZones.ZonedDateTime} ||
-    T == Union{String, Dates.Date, TimeZones.ZonedDateTime}
-end
+# The element type of a vector of times, such as the `when` of a gx:Track: the same union.
+is_time_primitive_element_type(T::Type) = is_time_primitive_type(T)
 
 function assign_vector_element!(parent, field_name::Symbol, field_type::Type, vec_type::Type,
                                value::String, original_tag::String)

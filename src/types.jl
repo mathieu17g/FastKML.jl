@@ -192,13 +192,13 @@ end
 # ─── Time types ──────────────────────────────────────────────────────────────
 Base.@kwdef mutable struct TimeStamp <: TimePrimitive
     @object
-    @option when ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+    @option when ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
 end
 
 Base.@kwdef mutable struct TimeSpan <: TimePrimitive
     @object
-    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
-    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
+    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
 end
 
 # Google extension: same shape as TimeStamp / TimeSpan but used inside
@@ -208,13 +208,13 @@ end
 # routes <gx:TimeStamp> / <gx:TimeSpan> there automatically.
 Base.@kwdef mutable struct gx_TimeStamp <: TimePrimitive
     @object
-    @option when ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+    @option when ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
 end
 
 Base.@kwdef mutable struct gx_TimeSpan <: TimePrimitive
     @object
-    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
-    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.Date,String}
+    @option begin_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
+    @option end_ ::Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}
 end
 
 # ─── Component types ─────────────────────────────────────────────────────────
@@ -610,7 +610,7 @@ Base.@kwdef mutable struct gx_Track <: Geometry
     @option extrude ::Bool
     @option tessellate ::Bool
     @altitude_mode_elements
-    @option when ::Vector{Union{TimeZones.ZonedDateTime,Dates.Date,String}}
+    @option when ::Vector{Union{TimeZones.ZonedDateTime,Dates.DateTime,Dates.Date,String}}
     @option gx_coord ::Union{Vector{Coord2},Vector{Coord3}}
     @option gx_angles ::Vector{String}
     @option Model ::Model
