@@ -1814,15 +1814,16 @@ end
 end
 
 @testset "Tag names resolve to types, not module functions" begin
-    # `object` turns an element's tag into a KML type or an enumeration by its name, through
-    # `TAG_TO_TYPE` and two sets of names. Those sets must hold the names of TYPES only.
-    # `names(Enums; all)` and `names(Types; all)` also list each module's own functions and
-    # the macro that defines the enumerations — `Enums.include`, `Enums.eval`, `typemap` —
-    # and resolving a tag to one of those called it with the element's text. An `<include>`
-    # element thus ran `include` on the path it held, so a crafted file executed Julia code
-    # during a read. A tag that names no modeled type is now read as an unmodeled element.
+    # `object` turns an element's tag into a KML element type through `TAG_TO_TYPE`, which
+    # holds each concrete KML type under its tag and its name, or into an enumeration
+    # through the set of the names of the enumeration types. `names(Enums; all)` also lists
+    # the module's own functions and the macro that defines the enumerations —
+    # `Enums.include`, `Enums.eval` — and resolving a tag to one of those called it with the
+    # element's text. An `<include>` element thus ran `include` on the path it held, so a
+    # crafted file executed Julia code during a read. A tag that names no modeled type is
+    # now read as an unmodeled element.
     @test all(n -> getglobal(FastKML.Enums, n) isa Type, FastKML.XMLParsing.ENUM_NAMES_SET)
-    @test all(n -> getglobal(FastKML.Types, n) isa Type, FastKML.XMLParsing.KML_NAMES_SET)
+    @test all(T -> isconcretetype(T) && T <: FastKML.KMLElement, values(FastKML.TAG_TO_TYPE))
     @test !(:include in FastKML.XMLParsing.ENUM_NAMES_SET)
     @test !(:eval in FastKML.XMLParsing.ENUM_NAMES_SET)
 
@@ -1837,6 +1838,19 @@ end
     file = @test_logs (:warn, r"No field named 'include'") match_mode = :any parse(KMLFile, kml)
     @test file.children[1] isa FastKML.Document
     @test file.children[1].name == "kept"
+
+    # Any other type of FastKML, abstract or an alias, such as `Feature` or `Coord2`, names
+    # no KML element, nor does `<kml>` inside a document: such an element is read as
+    # unmodeled, with a warning, and the rest of the document is read.
+    T = FastKML.Types
+    others = [n for n in names(T; all = true) if !occursin(r"[#@]", string(n)) && isdefined(T, n) &&
+              getglobal(T, n) isa Type && !(isconcretetype(getglobal(T, n)) && getglobal(T, n) <: FastKML.KMLElement)]
+    @test :Feature in others && :Coord2 in others
+    @testset "<$tag>" for tag in [string.(others); "kml"]
+        s = """<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>kept</name><$tag><a>1</a></$tag></Document></kml>"""
+        file = @test_logs (:warn, r"Unhandled Tag") match_mode = :any parse(KMLFile, s)
+        @test file.children[1].name == "kept"
+    end
 end
 
 # ── Network-gated integration tests vs ArchGDAL ─────────────────────────────
