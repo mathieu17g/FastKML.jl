@@ -19,3 +19,12 @@ Modules = [
 ]
 Private = false
 ```
+
+## Time values
+
+A time element gives a `ZonedDateTime`, a `DateTime`, a `Date`, or, for a year or a year and a month, a `PartialDate`.
+
+```@docs
+PartialDate
+dates
+```

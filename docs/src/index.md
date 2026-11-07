@@ -8,7 +8,7 @@ originally proposed as [`KML.jl#14`](https://github.com/JuliaComputing/KML.jl/pu
 now a standalone package: `KML.jl` continues on its own as a deliberately
 lightweight library, while FastKML.jl hosts the performance work and extra
 integrations that were out of scope upstream. It is built on top of
-[`XML.jl`](https://github.com/JuliaComputing/XML.jl) — whose eager and lazy XML
+[`XML.jl`](https://github.com/JuliaData/XML.jl) — whose eager and lazy XML
 node representations are what make `KMLFile` and `LazyKMLFile` possible.
 
 ## Highlights
