@@ -40,7 +40,7 @@
       <gx:horizFov>45</gx:horizFov>
       <gx:TimeSpan>
         <begin>2010-05-28T02:02:09Z</begin>
-        <end>2010-05-28T02:02:56Z</end>
+        <end>2010-05-28T02:02:56</end>
       </gx:TimeSpan>
       <gx:ViewerOptions>
         <gx:option name="historicalimagery" enabled="0"/>
@@ -139,7 +139,7 @@
         <tessellate>1</tessellate>
         <altitudeMode>absolute</altitudeMode>
         <when>2010-05-28T02:02:09Z</when>
-        <when>2010-05-28T02:02:35Z</when>
+        <when>2010-05-28T02:02:35</when>
         <gx:coord>-122.207881 37.371915 156.0</gx:coord>
         <gx:coord>-122.205712 37.373288 152.0</gx:coord>
         <gx:angles>45.54 66.2 4.13</gx:angles>
@@ -219,7 +219,7 @@
     <Placemark>
       <name>Region and model</name>
       <TimeStamp>
-        <when>2010-05-28T02:02:09Z</when>
+        <when>2010-05-28T02:02:09</when>
       </TimeStamp>
       <Region>
         <LatLonAltBox>
