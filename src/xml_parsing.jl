@@ -175,56 +175,13 @@ function object(node::XMLAnyNode)
     return _object_slow(node)
 end
 
-const KML_NAMES_SET = let
-    # The names of the KML TYPES declared in `Types`. `names(Types; all)` lists the module's
-    # functions and tables too, such as `typemap` and `TAG_TO_TYPE`; a tag must resolve only
-    # to a type, never to a function that `_object_slow` would then call.
-    all_names = Set{Symbol}()
-    for name in names(Types; all = true, imported = false)
-        startswith(string(name), "_") && continue
-        name === :Types && continue
-        isdefined(Types, name) && getglobal(Types, name) isa Type && push!(all_names, name)
-    end
-    all_names
-end
-
+# An element that the steps of `object` leave names no KML type: `TAG_TO_TYPE` holds every
+# concrete KML type under its tag and its name, and the enumerations come before. Any other
+# name, such as that of an abstract type like `Feature`, is not instantiated: the element
+# is left out, with a warning, and the rest of the file is read.
 function _object_slow(node::XMLAnyNode)
     original_tag_name = XML.tag(node)
     sym = tagsym(original_tag_name)
-
-    @debug "Entered _object_slow for tag: '$original_tag_name' (symbol: :$sym)"
-
-    # Path 1: Is it an Enum that was perhaps missed by the main object() check?
-    if sym in ENUM_NAMES_SET
-        @debug "Tag '$original_tag_name' (symbol :$sym) is being parsed as an Enum by `_object_slow`"
-        return getproperty(Enums, sym)(extract_text_content_fast(node))
-    end
-
-    # Path 2: Is it a KML type defined in the KML module but somehow missed by TAG_TO_TYPE?
-    if sym in KML_NAMES_SET || sym == :Pair
-        @warn begin
-            "Performance Hint: KML type `:$sym` (from tag `'$original_tag_name'`) is being instantiated " *
-            "via reflection in `_object_slow`. This is a fallback and less efficient.\n" *
-            "ACTION: To improve performance and maintainability, ensure that the tag `'$original_tag_name'` " *
-            "correctly maps to the Julia type in the `TAG_TO_TYPE` dictionary."
-        end _id = (:reflection, sym) maxlog = 1
-
-        # Object instantiation logic - need to find the type in the Types module
-        T = if hasproperty(Types, sym)
-            getproperty(Types, sym)
-        else
-            error("Type $sym not found in Types module")
-        end
-        
-        o = T()
-        add_attributes!(o, node)
-        @for_each_immediate_child node child_xml_node begin
-            add_element!(o, child_xml_node)
-        end
-        return o
-    end
-
-    # Path 3: Fallthrough - truly unhandled or unrecognized tag
     @content_warn (:unhandled_tag, String(original_tag_name)) "Unhandled Tag: `'$original_tag_name'` (symbol: `:$sym`). This tag was not recognized."
     return nothing
 end

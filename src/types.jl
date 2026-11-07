@@ -759,7 +759,6 @@ function _populate_tag_to_type()
     end
     
     # Manual mappings
-    TAG_TO_TYPE[:kml] = KMLFile
     TAG_TO_TYPE[:Placemark] = Placemark
     TAG_TO_TYPE[:Point] = Point
     TAG_TO_TYPE[:Polygon] = Polygon
