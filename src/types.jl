@@ -61,6 +61,11 @@ A `PartialDate` covers every day of its year or month, which `dates(d)` gives: t
 `last(dates(d))` for the end of a period, such as `<end>1997</end>`, and `first(dates(d))`,
 or `Date(d)`, for its beginning. `year(d)` and `month(d)` give its fields, `month(d)` being
 `nothing` for a year alone.
+
+These are days: place a time `t` by its day, `Date(t) ∈ dates(d)` or
+`Date(t) ≤ last(dates(d))`. A `DateTime` compared with a `Date` stands for its midnight, so
+that `DateTime(1997, 12, 31, 15) ≤ last(dates(PartialDate(1997)))` is `false`, and a
+`ZonedDateTime` does not compare with a `Date`.
 """
 struct PartialDate
     year::Int64
