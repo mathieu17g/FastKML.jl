@@ -195,19 +195,14 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     end
     
     # A value that no format reads, such as a 30 February, comes back as the error that says
-    # why, or as `nothing` when there is none to give, without the cost of an exception.
+    # why, without the cost of an exception.
     value = try
         parse_by_format(s, format)
     catch e
         e   # a time zone that the TimeZones package does not know, for one
     end
-    if value isa Exception
-        warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=format exception=value example=s
-    elseif value === nothing
-        warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=format example=s
-    else
-        return value
-    end
+    value isa Exception || return value
+    warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=format exception=value example=s
     return String(s)
 end
 
@@ -242,36 +237,8 @@ function parse_datetime_with_timezone(s::AbstractString, format::Symbol)
     end
     
     tz_str = tz_match.captures[1]
-    dt_str = @view s[1:tz_match.offset-1]
-    
-    # Parse the datetime part. `tryparse` gives `nothing` for a format that does not read
-    # it, rather than an exception.
-    dt = if format == :datetime_tz_extended
-        # Try most common format first
-        dt_t = tryparse(DateTime, dt_str, dateformat"yyyy-mm-ddTHH:MM:SS")
-        if dt_t !== nothing
-            dt_t
-        elseif occursin(".", dt_str)
-            # Try with fractional seconds
-            tryparse(DateTime, dt_str, dateformat"yyyy-mm-ddTHH:MM:SS.s")
-        else
-            # Try with space separator
-            tryparse(DateTime, dt_str, dateformat"yyyy-mm-dd HH:MM:SS")
-        end
-    else  # basic format
-        # Handle fractional seconds
-        if occursin(".", dt_str)
-            dot_pos = findfirst('.', dt_str)
-            base_str = @view dt_str[1:dot_pos-1]
-            frac_str = @view dt_str[dot_pos+1:end]
-            base_dt = tryparse(DateTime, base_str, dateformat"yyyymmddTHHMMSS")
-            frac = parse(Float64, "0." * frac_str)
-            base_dt === nothing ? nothing : base_dt + Millisecond(round(Int, frac * 1000))
-        else
-            tryparse(DateTime, dt_str, dateformat"yyyymmddTHHMMSS")
-        end
-    end
-    dt === nothing && return datetime_error(dt_str, format == :datetime_tz_basic)
+    dt = read_datetime(@view(s[1:tz_match.offset-1]), format == :datetime_tz_basic)
+    dt isa DateTime || return dt
 
     # Use cached timezone
     tz = get_cached_timezone(tz_str)
@@ -279,59 +246,46 @@ function parse_datetime_with_timezone(s::AbstractString, format::Symbol)
     return ZonedDateTime(dt, tz)
 end
 
-# Pre-compiled date formats
-const DT_EXTENDED_T = dateformat"yyyy-mm-ddTHH:MM:SS"
-const DT_EXTENDED_T_FRAC = dateformat"yyyy-mm-ddTHH:MM:SS.s"
-const DT_EXTENDED_SPACE = dateformat"yyyy-mm-dd HH:MM:SS"
-const DT_EXTENDED_SPACE_FRAC = dateformat"yyyy-mm-dd HH:MM:SS.s"
-const DT_BASIC = dateformat"yyyymmddTHHMMSS"
+parse_datetime_without_timezone(s::AbstractString, format::Symbol) =
+    read_datetime(s, format == :datetime_basic)
 
-function parse_datetime_without_timezone(s::AbstractString, format::Symbol)
-    # `tryparse` gives `nothing` for a format that does not read `s`, rather than an
-    # exception
-    dt = if format == :datetime_extended
-        # Try most common format first
-        dt_t = tryparse(DateTime, s, DT_EXTENDED_T)
-        if dt_t !== nothing
-            dt_t
-        elseif occursin(".", s)
-            dt_frac = tryparse(DateTime, s, DT_EXTENDED_T_FRAC)
-            dt_frac !== nothing ? dt_frac : tryparse(DateTime, s, DT_EXTENDED_SPACE_FRAC)
-        else
-            tryparse(DateTime, s, DT_EXTENDED_SPACE)
-        end
-    else  # basic format
-        if occursin(".", s)
-            dot_pos = findfirst('.', s)
-            base_str = @view s[1:dot_pos-1]
-            frac_str = @view s[dot_pos+1:end]
-            base_dt = tryparse(DateTime, base_str, DT_BASIC)
-            frac = parse(Float64, "0." * frac_str)
-            base_dt === nothing ? nothing : base_dt + Millisecond(round(Int, frac * 1000))
-        else
-            tryparse(DateTime, s, DT_BASIC)
-        end
-    end
-    return dt === nothing ? datetime_error(s, format == :datetime_basic) : dt
+# A date-time without its time zone, of a form that a validator found, so that each field
+# is made of digits at its place: `yyyymmddTHHMMSS`, or `yyyy-mm-ddTHH:MM:SS` with a T or a
+# space, then maybe a fraction of second. The fraction is rounded to the nearest
+# millisecond, the precision of a `DateTime`: the fourth digit decides, 5 or more rounding
+# up, and 1000 carries to the next second. A field out of range, such as a 30 February, an
+# hour 25 or 24:00:00 with a fraction, gives the `ArgumentError` that `DateTime` throws,
+# which `Dates.validargs` returns without the cost of an exception.
+function read_datetime(s::AbstractString, basic::Bool)
+    y, m, d = basic ? (digits_at(s, 1, 4), digits_at(s, 5, 6), digits_at(s, 7, 8)) :
+                      (digits_at(s, 1, 4), digits_at(s, 6, 7), digits_at(s, 9, 10))
+    H, M, S = basic ? (digits_at(s, 10, 11), digits_at(s, 12, 13), digits_at(s, 14, 15)) :
+                      (digits_at(s, 12, 13), digits_at(s, 15, 16), digits_at(s, 18, 19))
+    ms = fraction_milliseconds(s, basic ? 17 : 21)
+    err = Dates.validargs(DateTime, y, m, d, H, M, S, min(ms, Int64(999)))
+    err === nothing || return err
+    return DateTime(y, m, d, H, M, S) + Millisecond(ms)
 end
 
-# Why no format reads a date-time of a valid form, without the cost of an exception: the
-# `ArgumentError` that `DateTime` throws for a field out of range, such as a 30 February or
-# an hour 25 (`DateTime` itself checks its fields by `Dates.validargs`); one for a fraction
-# of second finer than a millisecond, the precision of a `DateTime`, which `Dates` does not
-# read; or else `nothing`.
-function datetime_error(s::AbstractString, basic::Bool)
-    field(a, b) = parse(Int64, @view s[a:b])
-    y, m, d = basic ? (field(1, 4), field(5, 6), field(7, 8)) : (field(1, 4), field(6, 7), field(9, 10))
-    H, M, S = basic ? (field(10, 11), field(12, 13), field(14, 15)) : (field(12, 13), field(15, 16), field(18, 19))
-    err = Dates.validargs(DateTime, y, m, d, H, M, S, Int64(0))
-    err === nothing || return err
-    dot = findfirst('.', s)
-    dot === nothing && return nothing
-    digits = @view s[nextind(s, dot):end]
-    # Digits after the third that are not all zeros: finer than a millisecond
-    any(!=('0'), Iterators.drop(digits, 3)) || return nothing
-    return ArgumentError("Fraction of second .$digits is finer than a millisecond, the precision of DateTime")
+# The number that the digits of `s` from `a` to `b` write
+@inline function digits_at(s::AbstractString, a::Int, b::Int)
+    v = Int64(0)
+    for i in a:b
+        v = 10v + Int64(codeunit(s, i) - UInt8('0'))
+    end
+    return v
+end
+
+# The fraction of second whose digits run from `i` to the end of `s`, rounded to the nearest
+# millisecond; 0 without a fraction
+@inline function fraction_milliseconds(s::AbstractString, i::Int)
+    n = ncodeunits(s)
+    ms = Int64(0)
+    i > n && return ms
+    for j in i:i+2
+        ms = 10ms + (j <= n ? Int64(codeunit(s, j) - UInt8('0')) : Int64(0))
+    end
+    return i + 3 <= n && codeunit(s, i + 3) >= UInt8('5') ? ms + 1 : ms
 end
 
 function parse_week_date(s::AbstractString, format::Symbol)

@@ -1038,17 +1038,28 @@ end
     # ── A fraction of second, or a space before the time ──
     @test parse_iso("2024-02-28T10:00:00.5Z") == ZonedDateTime(2024, 2, 28, 10, 0, 0, 500, tz"UTC")
     @test parse_iso("2024-02-28 10:00:00Z")   == ZonedDateTime(2024, 2, 28, 10, tz"UTC")
+    @test parse_iso("2024-02-28 10:00:00.5Z") == ZonedDateTime(2024, 2, 28, 10, 0, 0, 500, tz"UTC")
     @test parse_iso("20240228T100000.5Z")     == ZonedDateTime(2024, 2, 28, 10, 0, 0, 500, tz"UTC")
     @test parse_iso("2024-02-28T10:00:00.5")  == DateTime(2024, 2, 28, 10, 0, 0, 500)
     @test parse_iso("2024-02-28 10:00:00.5")  == DateTime(2024, 2, 28, 10, 0, 0, 500)
     @test parse_iso("2024-02-28 10:00:00")    == DateTime(2024, 2, 28, 10)
+    # A fraction finer than a millisecond, the precision of a `DateTime`, as Python, .NET or
+    # Go write it, is rounded to the nearest millisecond in either form: the fourth digit
+    # decides, 5 or more rounding up, into the next second if need be.
+    @test parse_iso("2024-02-28T10:00:00.123456Z")       == ZonedDateTime(2024, 2, 28, 10, 0, 0, 123, tz"UTC")
+    @test parse_iso("2024-02-28T10:00:00.1234567+01:00") == ZonedDateTime(2024, 2, 28, 9, 0, 0, 123, tz"UTC")
+    @test parse_iso("2024-02-28 10:00:00.123456789")     == DateTime(2024, 2, 28, 10, 0, 0, 123)
+    @test parse_iso("2024-02-28T10:00:00.1235")          == DateTime(2024, 2, 28, 10, 0, 0, 124)
+    @test parse_iso("20240228T100000.0025Z")             == ZonedDateTime(2024, 2, 28, 10, 0, 0, 3, tz"UTC")
+    @test parse_iso("2024-12-31T23:59:59.9996Z")         == ZonedDateTime(2025, 1, 1, tz"UTC")
     # Each form is found without throwing an exception, whose stack trace costs more than
     # reading the value: it allocates no more than the form with a T and no fraction. (Code
-    # coverage allocates too; with a time zone, Julia 1.10 allocates once in `occursin` when
-    # it finds the fraction.)
+    # coverage allocates too.)
     if Base.JLOptions().code_coverage == 0
         allocs(s) = (parse_iso(s); @allocations parse_iso(s))
         @testset "$s" for (s, plain) in (("2024-02-28 10:00:00Z", "2024-02-28T10:00:00Z"),
+                                         ("2024-02-28T10:00:00.123456Z", "2024-02-28T10:00:00Z"),
+                                         ("20240228T100000.5Z", "20240228T100000Z"),
                                          ("2024-02-28T10:00:00.5", "2024-02-28T10:00:00"),
                                          ("2024-02-28 10:00:00", "2024-02-28T10:00:00"))
             @test allocs(s) == allocs(plain)
@@ -1075,22 +1086,15 @@ end
                                        ("2024-02-30T10:00:00Z", "Day: 30 out of range (1:29)"),
                                        ("20240230T100000Z", "Day: 30 out of range (1:29)"),
                                        ("2024-02-28T25:00:00Z", "Hour: 25 out of range (0:23)"),
-                                       ("2024-02-28T10:00:60", "Second: 60 out of range (0:59)"))
+                                       ("2024-02-28T10:00:60", "Second: 60 out of range (0:59)"),
+                                       ("2024-02-28T24:00:00.5Z", "Hour: 24 out of range (0:23)"),
+                                       ("20240228T240000.5", "Hour: 24 out of range (0:23)"))
         logs = warnings(() -> @test parse_iso(s) == s)
         @test only(logs).kwargs[:exception] == ArgumentError(message)
     end
-    # A fraction of second finer than a millisecond, the precision of a `DateTime`, as
-    # Python writes it: the date-time stays text, and the warning names the fraction.
-    @testset "$s" for s in ("2024-02-28T10:00:00.123456Z", "2024-02-28T10:00:00.123456")
-        logs = warnings(() -> parse_iso(s))
-        @test only(logs).kwargs[:exception] ==
-              ArgumentError("Fraction of second .123456 is finer than a millisecond, the precision of DateTime")
-    end
-    # Any other date-time that no format reads stays text with no error to give: here a
-    # space before the time, which `xsd:dateTime` does not allow, with both a fraction of
-    # second and a time zone.
-    logs = warnings(() -> @test parse_iso("2024-02-28 10:00:00.5Z") == "2024-02-28 10:00:00.5Z")
-    @test !haskey(only(logs).kwargs, :exception)
+    # The end of a day, 24:00:00, which `xsd:dateTime` allows, is the next midnight, as for
+    # a `DateTime`; with a fraction of second, it is out of range (above).
+    @test parse_iso("2024-02-28T24:00:00Z") == ZonedDateTime(2024, 2, 29, tz"UTC")
 
     # ── warn=false suppresses warnings ──
     @test parse_iso("definitely not iso"; warn = false) == "definitely not iso"
