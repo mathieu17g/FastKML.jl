@@ -5,6 +5,7 @@ export parse_iso8601
 # ─── base deps ────────────────────────────────────────────────────────────────
 using Dates, TimeZones, Automa
 using ..ContentWarnings: @content_warn
+using ..Types: PartialDate
 
 # Define regex patterns for ISO 8601 formats
 const digit = re"[0-9]"
@@ -49,6 +50,10 @@ const week_basic = year * week * weekday
 const ordinal_extended = year * re"-" * ordinal
 const ordinal_basic = year * ordinal
 
+# A date, a year or a year and a month with a time zone, which `xsd:date`, `xsd:gYear` and
+# `xsd:gYearMonth` allow, and which no Julia type holds
+const zoned_date = (year | year * re"-" * month | year * re"-" * month * re"-" * day) * (tz_utc | tz_offset)
+
 # Generate validator functions for each format
 @eval $(Automa.generate_buffer_validator(:is_datetime_tz_extended, datetime_tz_extended; goto=true))
 @eval $(Automa.generate_buffer_validator(:is_datetime_tz_basic, datetime_tz_basic; goto=true))
@@ -60,6 +65,7 @@ const ordinal_basic = year * ordinal
 @eval $(Automa.generate_buffer_validator(:is_week_basic, week_basic; goto=true))
 @eval $(Automa.generate_buffer_validator(:is_ordinal_extended, ordinal_extended; goto=true))
 @eval $(Automa.generate_buffer_validator(:is_ordinal_basic, ordinal_basic; goto=true))
+@eval $(Automa.generate_buffer_validator(:is_zoned_date, zoned_date; goto=true))
 
 # Performance optimization: Pre-check string length to avoid unnecessary validation
 @inline function quick_format_check(s::AbstractString)
@@ -135,8 +141,22 @@ function date_or_error(year::Integer, month::Integer, day::Integer)
     return err === nothing ? Date(year, month, day) : err
 end
 
+# A year, `yyyy`, or a year and a month, `yyyy-mm` (`xsd:gYear`, `xsd:gYearMonth`), as a
+# `PartialDate`. A month out of range gives the `ArgumentError` that `Date` throws, which
+# `Dates.validargs` returns without the cost of an exception; any other text, `nothing`.
+function read_partial_date(s::AbstractString)
+    n = ncodeunits(s)
+    isdigit_at(i) = UInt8('0') <= codeunit(s, i) <= UInt8('9')
+    (n == 4 || n == 7) && all(isdigit_at, 1:4) || return nothing
+    n == 4 && return PartialDate(digits_at(s, 1, 4))
+    codeunit(s, 5) == UInt8('-') && isdigit_at(6) && isdigit_at(7) || return nothing
+    y, m = digits_at(s, 1, 4), digits_at(s, 6, 7)
+    err = Dates.validargs(Date, y, m, Int64(1))
+    return err === nothing ? PartialDate(y, m) : err
+end
+
 """
-    parse_iso8601(s::AbstractString; warn::Bool=true) -> Union{ZonedDateTime, DateTime, Date, String}
+    parse_iso8601(s::AbstractString; warn::Bool=true) -> Union{ZonedDateTime, DateTime, Date, PartialDate, String}
 
 Parse an ISO 8601 formatted string into the appropriate Julia type.
 Returns the original string if the format is not recognized.
@@ -149,7 +169,17 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     hint = quick_format_check(s)
     
     if hint == :invalid
-        warn && @content_warn (:iso8601, :too_short) "Unable to parse as ISO 8601: string too short" input=s example=s
+        # A year or a year and a month (`xsd:gYear`, `xsd:gYearMonth`) is shorter than any
+        # other form
+        value = read_partial_date(s)
+        value isa PartialDate && return value
+        if value isa Exception
+            warn && @content_warn (:iso8601, :failed) "Unable to parse as ISO 8601: parsing failed" input=s format=:partial_date exception=value example=s
+        elseif is_zoned_date(s) === nothing
+            warn && @content_warn (:iso8601, :zoned_date) "Unable to parse as ISO 8601: time zone on a date not read" input=s example=s
+        else
+            warn && @content_warn (:iso8601, :too_short) "Unable to parse as ISO 8601: string too short" input=s example=s
+        end
         return String(s)
     end
     
@@ -190,7 +220,11 @@ function parse_iso8601(s::AbstractString; warn::Bool=true)
     end
     
     if format === nothing
-        warn && @content_warn (:iso8601, :format) "Unable to parse as ISO 8601: format not recognized" input=s example=s
+        if is_zoned_date(s) === nothing
+            warn && @content_warn (:iso8601, :zoned_date) "Unable to parse as ISO 8601: time zone on a date not read" input=s example=s
+        else
+            warn && @content_warn (:iso8601, :format) "Unable to parse as ISO 8601: format not recognized" input=s example=s
+        end
         return String(s)
     end
     

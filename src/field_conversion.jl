@@ -380,7 +380,7 @@ end
 # The type of a time field without `Nothing`. Julia orders the types of a `Union` itself, so
 # one comparison covers every order in which a field may write them.
 is_time_primitive_type(T::Type) =
-    T == Union{TimeZones.ZonedDateTime, Dates.DateTime, Dates.Date, String}
+    T == Union{TimeZones.ZonedDateTime, Dates.DateTime, Dates.Date, Types.PartialDate, String}
 
 function map_field_name(parent, field_name::Symbol)::Symbol
     # `begin` and `end` are Julia reserved keywords — TimeSpan and gx_TimeSpan

@@ -28,6 +28,7 @@ include("navigation.jl")
 
 # Import for easier access
 using .Types
+using .Types: dates
 using .Enums
 using .Coordinates: coordinate_string, Coord2, Coord3
 using .XMLSerialization: to_xml, xml_children, Node
@@ -43,6 +44,7 @@ export children, to_xml, xml_children
 export unwrap_single_part_multigeometry
 export PlacemarkTable, list_layers, get_layer_names, get_num_layers
 export coordinate_string, Coord2, Coord3
+export dates
 
 # Export the types of `Types`, but neither `NoAttributes`, the supertype of the elements
 # without attributes, nor its functions and tables, which keep a qualified name such as

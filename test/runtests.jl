@@ -1088,13 +1088,32 @@ end
                                        ("2024-02-28T25:00:00Z", "Hour: 25 out of range (0:23)"),
                                        ("2024-02-28T10:00:60", "Second: 60 out of range (0:59)"),
                                        ("2024-02-28T24:00:00.5Z", "Hour: 24 out of range (0:23)"),
-                                       ("20240228T240000.5", "Hour: 24 out of range (0:23)"))
+                                       ("20240228T240000.5", "Hour: 24 out of range (0:23)"),
+                                       ("1997-13", "Month: 13 out of range (1:12)"),
+                                       ("1997-00", "Month: 0 out of range (1:12)"))
         logs = warnings(() -> @test parse_iso(s) == s)
         @test only(logs).kwargs[:exception] == ArgumentError(message)
     end
     # The end of a day, 24:00:00, which `xsd:dateTime` allows, is the next midnight, as for
     # a `DateTime`; with a fraction of second, it is out of range (above).
     @test parse_iso("2024-02-28T24:00:00Z") == ZonedDateTime(2024, 2, 29, tz"UTC")
+
+    # ── A year, or a year and a month (`xsd:gYear`, `xsd:gYearMonth`), which the KML
+    #    reference gives as examples of `<when>`: a `PartialDate`, written back as read ──
+    @test isempty(warnings(() -> @test parse_iso("1997") === PartialDate(1997)))
+    @test isempty(warnings(() -> @test parse_iso("1997-07") === PartialDate(1997, 7)))
+    d, y = PartialDate(1997, 7), PartialDate(1997)
+    @test (year(d), month(d), year(y), month(y)) === (1997, 7, 1997, nothing)
+    @test (Date(d), Date(y)) == (Date(1997, 7, 1), Date(1997, 1, 1))
+    @test (string(d), string(y), string(PartialDate(812, 3))) == ("1997-07", "1997", "0812-03")
+    @test (repr(d), repr(y)) == ("PartialDate(1997, 7)", "PartialDate(1997)")
+    @test_throws ArgumentError("Month: 13 out of range (1:12)") PartialDate(1997, 13)
+    # A time zone on a date, a year or a year and a month, which `xsd:date`, `xsd:gYear` and
+    # `xsd:gYearMonth` allow, is not read: the text stays, with a warning that says so.
+    @testset "$s" for s in ("1997Z", "1997-07+02:00", "1997-07-16Z", "1997-07-16+03:00")
+        logs = warnings(() -> @test parse_iso(s) == s)
+        @test startswith(string(only(logs).message), "Unable to parse as ISO 8601: time zone on a date")
+    end
 
     # ── warn=false suppresses warnings ──
     @test parse_iso("definitely not iso"; warn = false) == "definitely not iso"
@@ -1132,20 +1151,22 @@ end
     @test pms[1].TimePrimitive !== nothing
     @test pms[2].TimePrimitive !== nothing
 
-    # A date-time without a time zone, which `xsd:dateTime` allows, is read as a `DateTime`
-    # in each time element, and written as it was read.
-    @testset "$element" for (element, inner, value) in (
-            ("TimeStamp", "<TimeStamp><when>2024-02-28T10:00:00</when></TimeStamp>", pm -> pm.TimePrimitive.when),
-            ("TimeSpan", "<TimeSpan><begin>2024-02-28T10:00:00</begin></TimeSpan>", pm -> pm.TimePrimitive.begin_),
-            ("gx:TimeStamp", "<Camera><gx:TimeStamp><when>2024-02-28T10:00:00</when></gx:TimeStamp></Camera>",
+    # A date-time without a time zone, which `xsd:dateTime` allows, is read as a `DateTime`,
+    # and a year and a month as a `PartialDate`, in each time element, and written as read.
+    @testset "$element, $text" for (text, expected) in (("2024-02-28T10:00:00", DateTime(2024, 2, 28, 10)),
+                                                       ("1997-07", PartialDate(1997, 7))),
+                                  (element, inner, value) in (
+            ("TimeStamp", "<TimeStamp><when>$text</when></TimeStamp>", pm -> pm.TimePrimitive.when),
+            ("TimeSpan", "<TimeSpan><begin>$text</begin></TimeSpan>", pm -> pm.TimePrimitive.begin_),
+            ("gx:TimeStamp", "<Camera><gx:TimeStamp><when>$text</when></gx:TimeStamp></Camera>",
              pm -> pm.AbstractView.TimePrimitive.when),
-            ("gx:TimeSpan", "<LookAt><gx:TimeSpan><end>2024-02-28T10:00:00</end></gx:TimeSpan></LookAt>",
+            ("gx:TimeSpan", "<LookAt><gx:TimeSpan><end>$text</end></gx:TimeSpan></LookAt>",
              pm -> pm.AbstractView.TimePrimitive.end_))
         local_file = parse(KMLFile, """
             <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
               <Document><Placemark>$inner</Placemark></Document></kml>""")
-        @test value(only(FastKML.Utils.find_placemarks(local_file))) === DateTime(2024, 2, 28, 10)
-        @test occursin(">2024-02-28T10:00:00<", sprint(FastKML.write, local_file))
+        @test value(only(FastKML.Utils.find_placemarks(local_file))) === expected
+        @test occursin(">$text<", sprint(FastKML.write, local_file))
     end
 end
 
@@ -1456,16 +1477,17 @@ end
     @test lazy_track.when[1] isa TimeZones.ZonedDateTime
     @test lazy_track.ExtendedData === nothing  # documented lazy-path limitation
 
-    # ── <when> without a time zone, which `xsd:dateTime` allows: a `DateTime`, next to the
-    #    times that have one, on the eager path, in the table and on its lazy reference ──
+    # ── <when> without a time zone, which `xsd:dateTime` allows, and a year and a month:
+    #    a `DateTime` and a `PartialDate`, next to the times that have a time zone, on the
+    #    eager path, in the table and on its lazy reference ──
     local_kml = """
         <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
           <Document><Placemark><gx:Track>
-            <when>2010-05-28T02:02:09Z</when><when>2010-05-28T02:02:35</when>
-            <gx:coord>1 2 3</gx:coord><gx:coord>4 5 6</gx:coord>
+            <when>2010-05-28T02:02:09Z</when><when>2010-05-28T02:02:35</when><when>1997-07</when>
+            <gx:coord>1 2 3</gx:coord><gx:coord>4 5 6</gx:coord><gx:coord>7 8 9</gx:coord>
           </gx:Track></Placemark></Document></kml>"""
-    # `Dates` promotes neither type to the other: the vector says it holds both.
-    times = Any[ZonedDateTime(2010, 5, 28, 2, 2, 9, tz"UTC"), DateTime(2010, 5, 28, 2, 2, 35)]
+    # `Dates` promotes neither type to the other: the vector says it holds all three.
+    times = Any[ZonedDateTime(2010, 5, 28, 2, 2, 9, tz"UTC"), DateTime(2010, 5, 28, 2, 2, 35), PartialDate(1997, 7)]
     @test only(FastKML.Utils.find_placemarks(parse(KMLFile, local_kml))).Geometry.when == times
     TB = FastKML.TablesBridge
     local_lazy = parse(LazyKMLFile, local_kml)
