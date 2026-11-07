@@ -69,9 +69,10 @@ function _parse_kmlfile(doc::XMLAnyNode)
     @for_each_immediate_child kml_element child_node begin
         if XML.nodetype(child_node) === XML.Element
             parsed = object(child_node)
-            # object() can return: a KMLElement (well-modeled tag), an Enum
-            # (only meaningful as a leaf field), a String (simple leaf), or
-            # `nothing` (truly unmodeled — warning already emitted there).
+            # object() can return: a KMLElement (well-modeled tag), a String
+            # (simple leaf), or `nothing` (an enumeration, which only the field
+            # of a parent converts, or a truly unmodeled tag — warning already
+            # emitted there).
             # Direct children of <kml> are only meaningful as KMLElement. Anything
             # else is either malformed KML or an unmodeled top-level element
             # (e.g. <NetworkLinkControl> in real-world feeds): drop it instead of
@@ -151,16 +152,10 @@ function object(node::XMLAnyNode)
     if sym in ENUM_NAMES_SET
         text_content = extract_text_content_fast(node)
         if !isempty(text_content)
-            # A value outside the enumeration of the element gives `nothing` rather than
-            # failing the whole read. For a child element, the field assignment that follows
-            # reads the text again: it warns and leaves the field empty, or, for an altitude
-            # mode, finds the value in the other enumeration.
-            try
-                return getproperty(Enums, sym)(text_content)
-            catch e
-                e isa ErrorException || rethrow()
-                return nothing
-            end
+            # The field assignment of the parent converts the text, once: it warns and
+            # leaves the field empty for a value outside the enumeration, or, for an
+            # altitude mode, finds the value in the other enumeration.
+            return nothing
         else
             # An empty enumeration: the field assignment warns once (`_assign_empty!`).
             return ""

@@ -323,6 +323,11 @@ end
         @test string(ls.altitudeMode) == value
         @test XML.tag.(XML.children(FastKML.to_xml(ls))) == [written]
     end
+    # A value of neither enumeration is left out, with the warning of the field, which gives
+    # the values of <altitudeMode>.
+    bogus = XML.parse("<LineString><altitudeMode>bogus</altitudeMode></LineString>", XML.Node)[1]
+    ls = @test_logs (:warn, r"must be one of .*, but got original value: 'bogus'") min_level = Logging.Warn FastKML.object(bogus)
+    @test ls.altitudeMode === nothing
 end
 
 @testset "Enumerations" begin
@@ -337,6 +342,30 @@ end
     link = only(file.children[1].Features).Link
     @test link.href == "a.kml"
     @test link.refreshMode === nothing
+
+    # A reader checks a value without throwing an exception, whose stack trace costs more
+    # than reading the element: `Enums.validargs` gives `nothing` for a value of the
+    # enumeration, and otherwise the error that its constructor throws, as `Dates.validargs`
+    # does for a date. Every field of an enumeration has it, the field of an altitude mode
+    # included.
+    E = FastKML.Enums
+    field_types = Set(FastKML.Types.nonnothing_type(fieldtype(T, f))
+                      for T in FastKML.all_concrete_subtypes(FastKML.KMLElement) for f in fieldnames(T))
+    @testset "$F" for F in filter(F -> F <: E.AbstractKMLEnum, collect(field_types))
+        @test E.validargs(F, "bogus") isa ErrorException
+        @test_throws E.validargs(F, "bogus") convert(F, "bogus")
+    end
+    @test E.validargs(E.refreshMode, "onExpire") === nothing
+    @test E.validargs(E.altitudeMode, "clampedToGround") === nothing   # read as clampToGround
+    @test E.validargs(Union{E.altitudeMode, E.gx_altitudeMode}, "clampToSeaFloor") === nothing
+
+    # The field assignment of the parent converts the text of an enumeration, once: `object`
+    # leaves it, and gives `nothing`, or `""` for an empty element, on which the field
+    # assignment warns.
+    @testset "$xml" for (xml, value) in (("<altitudeMode>absolute</altitudeMode>", nothing),
+                                         ("<refreshMode>bogus</refreshMode>", nothing), ("<altitudeMode/>", ""))
+        @test FastKML.object(XML.parse(xml, XML.Node)[1]) === value
+    end
 end
 
 @testset "Empty elements" begin
@@ -1006,6 +1035,26 @@ end
     @test parse_iso("2024-04-29T15:30:00+01:00") isa ZonedDateTime
     @test parse_iso("20240429T153000Z")          isa ZonedDateTime
 
+    # ── A fraction of second, or a space before the time ──
+    @test parse_iso("2024-02-28T10:00:00.5Z") == ZonedDateTime(2024, 2, 28, 10, 0, 0, 500, tz"UTC")
+    @test parse_iso("2024-02-28 10:00:00Z")   == ZonedDateTime(2024, 2, 28, 10, tz"UTC")
+    @test parse_iso("20240228T100000.5Z")     == ZonedDateTime(2024, 2, 28, 10, 0, 0, 500, tz"UTC")
+    @test parse_iso("2024-02-28T10:00:00.5")  == DateTime(2024, 2, 28, 10, 0, 0, 500)
+    @test parse_iso("2024-02-28 10:00:00.5")  == DateTime(2024, 2, 28, 10, 0, 0, 500)
+    @test parse_iso("2024-02-28 10:00:00")    == DateTime(2024, 2, 28, 10)
+    # Each form is found without throwing an exception, whose stack trace costs more than
+    # reading the value: it allocates no more than the form with a T and no fraction. (Code
+    # coverage allocates too; with a time zone, Julia 1.10 allocates once in `occursin` when
+    # it finds the fraction.)
+    if Base.JLOptions().code_coverage == 0
+        allocs(s) = (parse_iso(s); @allocations parse_iso(s))
+        @testset "$s" for (s, plain) in (("2024-02-28 10:00:00Z", "2024-02-28T10:00:00Z"),
+                                         ("2024-02-28T10:00:00.5", "2024-02-28T10:00:00"),
+                                         ("2024-02-28 10:00:00", "2024-02-28T10:00:00"))
+            @test allocs(s) == allocs(plain)
+        end
+    end
+
     # ── Week date / Ordinal date ──
     @test parse_iso("2024-W17-1") isa Date
     @test parse_iso("2024-119")   isa Date
@@ -1013,6 +1062,35 @@ end
     # ── Invalid strings round-trip as the original String, with a warning ──
     @test (@test_logs (:warn,) parse_iso("ab")) isa String
     @test (@test_logs (:warn,) parse_iso("not a date at all")) isa String
+
+    # ── A field out of range, such as a 30 February: the text stays, with a warning
+    #    that gives the error of `Date` or `DateTime`, which `Dates.validargs` returns
+    #    without the cost of an exception ──
+    @test FastKML.TimeParsing.parse_by_format("2024-02-30", :date_extended) ==
+          ArgumentError("Day: 30 out of range (1:29)")
+    warnings(f) = (logger = Test.TestLogger(min_level = Logging.Warn); Logging.with_logger(f, logger); logger.logs)
+    @testset "$s" for (s, message) in (("2024-02-30", "Day: 30 out of range (1:29)"),
+                                       ("20240230", "Day: 30 out of range (1:29)"),
+                                       ("2024-13-01", "Month: 13 out of range (1:12)"),
+                                       ("2024-02-30T10:00:00Z", "Day: 30 out of range (1:29)"),
+                                       ("20240230T100000Z", "Day: 30 out of range (1:29)"),
+                                       ("2024-02-28T25:00:00Z", "Hour: 25 out of range (0:23)"),
+                                       ("2024-02-28T10:00:60", "Second: 60 out of range (0:59)"))
+        logs = warnings(() -> @test parse_iso(s) == s)
+        @test only(logs).kwargs[:exception] == ArgumentError(message)
+    end
+    # A fraction of second finer than a millisecond, the precision of a `DateTime`, as
+    # Python writes it: the date-time stays text, and the warning names the fraction.
+    @testset "$s" for s in ("2024-02-28T10:00:00.123456Z", "2024-02-28T10:00:00.123456")
+        logs = warnings(() -> parse_iso(s))
+        @test only(logs).kwargs[:exception] ==
+              ArgumentError("Fraction of second .123456 is finer than a millisecond, the precision of DateTime")
+    end
+    # Any other date-time that no format reads stays text with no error to give: here a
+    # space before the time, which `xsd:dateTime` does not allow, with both a fraction of
+    # second and a time zone.
+    logs = warnings(() -> @test parse_iso("2024-02-28 10:00:00.5Z") == "2024-02-28 10:00:00.5Z")
+    @test !haskey(only(logs).kwargs, :exception)
 
     # ── warn=false suppresses warnings ──
     @test parse_iso("definitely not iso"; warn = false) == "definitely not iso"

@@ -56,8 +56,13 @@ function convert_field_value(value::String, target_type::Type, field_name::Symbo
         # Enum types
         elseif actual_type <: Enums.AbstractKMLEnum
             # `convert` rather than a call: the field of an altitude mode takes two
-            # enumerations.
-            return isempty(value) && Nothing <: target_type ? nothing : convert(actual_type, value)
+            # enumerations. `Enums.validargs` checks the value first, without the cost of
+            # the exception of a constructor: a value outside them throws only the error of
+            # the field. (An empty value of an optional field gives `nothing` above.)
+            err = Enums.validargs(actual_type, value)
+            err === nothing ||
+                throw(FieldConversionError(field_name, target_type, value, "Conversion failed: $(err)"))
+            return convert(actual_type, value)
             
         # Coordinate types
         elseif field_name === :coordinates || field_name === :gx_coord

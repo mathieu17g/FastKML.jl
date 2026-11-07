@@ -14,6 +14,11 @@ Base.show(io::IO, o::AbstractKMLEnum) = print(io, typeof(o), ": ", repr(o.value)
 Base.convert(::Type{T}, x::String) where {T<:AbstractKMLEnum} = T(x)
 Base.string(o::AbstractKMLEnum) = o.value
 
+# `validargs(T, s)`: `nothing` when `s` is a value of the enumeration `T`, otherwise the
+# error that the constructor of `T` throws, as `Dates.validargs` does for a date. A reader
+# checks a value with it, without the cost of an exception.
+function validargs end
+
 # ─── Macro for defining KML enum types ───────────────────────────────────────
 macro kml_enum(enum_name::Symbol, vals...)
     # enum_name is the symbol for the enum type, e.g., :altitudeMode
@@ -33,21 +38,8 @@ macro kml_enum(enum_name::Symbol, vals...)
 
                 # Constructor that takes a String
                 function $enum_name(input_string::String)
-                    # Check if the input_string is one of the valid values
-                    # $valid_values_as_strings_tuple is spliced in directly here
-                    if !(input_string ∈ $valid_values_as_strings_tuple)
-                        # Construct the error message using the pre-stringified components
-                        # $enum_name_as_string and $valid_values_as_strings_tuple are spliced in
-                        error_msg = string(
-                            $enum_name_as_string,
-                            " must be one of ",
-                            $valid_values_as_strings_tuple, # This will show as ("val1", "val2", ...)
-                            ", but got: '",
-                            input_string,
-                            "'",
-                        )
-                        error(error_msg)
-                    end
+                    err = validargs($enum_name, input_string)
+                    err === nothing || throw(err)
                     new(input_string) # Store the validated string
                 end
 
@@ -55,6 +47,23 @@ macro kml_enum(enum_name::Symbol, vals...)
                 function $enum_name(input_abstract_string::AbstractString)
                     $enum_name(String(input_abstract_string))
                 end
+            end
+
+            function validargs(::Type{$enum_name}, input_string::AbstractString)
+                # Check if the input_string is one of the valid values
+                # $valid_values_as_strings_tuple is spliced in directly here
+                input_string ∈ $valid_values_as_strings_tuple && return nothing
+                # Construct the error message using the pre-stringified components
+                # $enum_name_as_string and $valid_values_as_strings_tuple are spliced in
+                error_msg = string(
+                    $enum_name_as_string,
+                    " must be one of ",
+                    $valid_values_as_strings_tuple, # This will show as ("val1", "val2", ...)
+                    ", but got: '",
+                    input_string,
+                    "'",
+                )
+                return ErrorException(error_msg)
             end
         end,
     )
@@ -70,29 +79,33 @@ struct altitudeMode <: AbstractKMLEnum
         # Convert input to String for consistent processing
         input_str = String(input_value)
 
+        err = validargs(altitudeMode, input_str)
+        err === nothing || throw(err)
+
         # Normalize "clampedToGround" to "clampToGround"
         normalized_str = if input_str == "clampedToGround"
             "clampToGround"
         else
             input_str
         end
-
-        # Define the standard valid options
-        valid_options = ("clampToGround", "relativeToGround", "absolute")
-
-        # Check if the normalized string is one of the valid options
-        if !(normalized_str ∈ valid_options)
-            error_message = string(
-                "altitudeMode must be one of ",
-                valid_options,
-                ", but got original value: '",
-                input_str, # Show the original value in the error
-                "'",
-            )
-            error(error_message)
-        end
         new(normalized_str) # Store the (potentially normalized) standard value
     end
+end
+
+function validargs(::Type{altitudeMode}, input_value::AbstractString)
+    # Define the standard valid options; "clampedToGround" is normalized to "clampToGround"
+    valid_options = ("clampToGround", "relativeToGround", "absolute")
+
+    # Check if the string is one of the valid options
+    (input_value ∈ valid_options || input_value == "clampedToGround") && return nothing
+    error_message = string(
+        "altitudeMode must be one of ",
+        valid_options,
+        ", but got original value: '",
+        input_value, # Show the original value in the error
+        "'",
+    )
+    return ErrorException(error_message)
 end
 
 # Define all other KML enums
@@ -102,6 +115,8 @@ end
 # goes to the one whose values include it.
 Base.convert(::Type{Union{altitudeMode,gx_altitudeMode}}, x::String) =
     x == "relativeToSeaFloor" || x == "clampToSeaFloor" ? gx_altitudeMode(x) : altitudeMode(x)
+validargs(::Type{Union{altitudeMode,gx_altitudeMode}}, x::AbstractString) =
+    x == "relativeToSeaFloor" || x == "clampToSeaFloor" ? nothing : validargs(altitudeMode, x)
 @kml_enum refreshMode onChange onInterval onExpire
 @kml_enum viewRefreshMode never onStop onRequest onRegion
 @kml_enum shape rectangle cylinder sphere
