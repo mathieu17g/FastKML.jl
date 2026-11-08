@@ -14,14 +14,6 @@ import REPL  # loads FastKMLREPLExt
 
 
 
-@testset "Issue Coverage" begin
-    # https://github.com/JuliaComputing/FastKML.jl/issues/8
-    @test_warn "Unhandled Tag" read(joinpath(@__DIR__, "outside_spec.kml"), KMLFile)
-
-    # https://github.com/JuliaComputing/FastKML.jl/issues/12
-    @test read(joinpath(@__DIR__, "issue12.kml"), KMLFile) isa KMLFile
-end
-
 @testset "Empty Constructors" begin
     # The KML types are found by scanning FastKML's own modules. The list must be the one
     # `InteractiveUtils.subtypes` gives, order included: tag registration follows it.
@@ -536,6 +528,13 @@ end
     # A token that is not a number raises; the exception type depends on the Parsers version
     @test_throws Exception FastKML.Coordinates.parse_coordinates_automa("abc,1")
     @test_throws Exception FastKML.Coordinates.parse_coordinates_automa("1.2.3,1")
+
+    # A polygon as Google Earth Pro writes it: the tuples of its ring on one line, separated
+    # by single spaces, between a newline and tabs. Each tuple is a point of the ring.
+    file = read(joinpath(@__DIR__, "google_earth_pro_polygon.kml"), KMLFile)
+    ring = only(only(file.children).Features).Geometry.outerBoundaryIs.coordinates
+    @test ring == [SVector(-50.80770360421555, 27.50794679203254, 0.0), SVector(-46.63827492868646, 32.0230059721323, 0.0),
+                   SVector(-54.85996847570588, 35.7028706316008, 0.0), SVector(-50.80770360421555, 27.50794679203254, 0.0)]
 end
 
 @testset "Utils" begin
@@ -1804,7 +1803,7 @@ end
           ("A. Author", "https://example.org/", "a@example.org")
 end
 
-@testset "Unmodeled top-level tags are skipped, not fatal" begin
+@testset "Unmodeled elements are skipped, not fatal" begin
     # Regression: real-world feeds (e.g. USGS earthquake animated KML) put
     # unmodeled top-level KML elements alongside the Document
     # (`<NetworkLinkControl>` in OGC 2.2, future Google extensions, etc.).
@@ -1837,6 +1836,16 @@ end
     @test length(file.children) == 1
     @test file.children[1] isa FastKML.Document
     @test file.children[1].name == "survives the unknown siblings"
+
+    # Below the root too: a file exported by Google Earth holds, in its `<Document>`,
+    # `<gx:CascadingStyle>` elements, which no KML 2.2 schema defines. Each is left out,
+    # with a warning, and the rest of the document is read.
+    file = @test_logs (:warn, r"Unhandled Tag.*gx:CascadingStyle") match_mode = :any begin
+        read(joinpath(@__DIR__, "outside_spec.kml"), KMLFile)
+    end
+    doc = only(file.children)
+    @test doc.name == "Projeto sem título"
+    @test only(doc.Features).name == "Paris"
 end
 
 @testset "Tag names resolve to types, not module functions" begin
