@@ -98,11 +98,15 @@ end
 const ENUM_NAMES_SET = Set(nameof(T) for T in Types.all_concrete_subtypes(Enums.AbstractKMLEnum))
 
 """
-Main entry point for parsing XML nodes into KML objects.
+    object(node)
+
+Read the element `node`, an `XML.Node` or an `XML.LazyNode`, into a KML object. A node
+that is not an element, such as text or a comment, throws an `ArgumentError`.
 """
 function object(node::XMLAnyNode)
-    # Assuming 'node' is always an XML.Element when object() is called for KML types
-    sym = tagsym(XML.tag(node))
+    XML.nodetype(node) === XML.Element || throw(ArgumentError(
+        "object expects an element node, got a $(XML.nodetype(node)) node"))
+    sym = tagsym(XML.tag(node)::AbstractString)
 
     # ──  0. Structural tags (handled by add_element!) ─────────────────────────
     if sym === :outerBoundaryIs || sym === :innerBoundaryIs
