@@ -1,6 +1,6 @@
 name = "FastKML"
 uuid = "74919eb4-6d7e-4564-b3b0-39766c648c5e"
-authors = ["Mathieu BISKUPSKI and contributors"]
+authors = ["mathieu17g <mathieu19g@icloud.com> and contributors"]
 version = "0.2.0"
 
 [deps]
