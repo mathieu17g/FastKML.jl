@@ -2,6 +2,7 @@ module FastKMLGeoInterfaceExt
 
 using FastKML
 using GeoInterface
+import GeoFormatTypes
 import Base: show
 
 const GI = GeoInterface
@@ -10,8 +11,12 @@ const GI = GeoInterface
 GI.isgeometry(::FastKML.Geometry) = true
 GI.isgeometry(::Type{<:FastKML.Geometry}) = true
 
-GI.crs(::FastKML.Geometry) = GI.default_crs()
-GI.crs(::FastKML.Placemark) = GI.default_crs()
+# The OGC KML standard (2.3, Annex B) gives KML coordinates in WGS 84 with the longitude
+# first, "adapted from EPSG-4326". An altitude is a height above the EGM96 geoid in the
+# altitude mode `absolute` (EPSG:9707), above the terrain or ignored in the other modes, so
+# `crs` gives the horizontal system alone.
+GI.crs(::FastKML.Geometry) = GeoFormatTypes.EPSG(4326)
+GI.crs(::FastKML.Placemark) = GeoFormatTypes.EPSG(4326)
 
 # --- Point ---
 GI.geomtrait(::FastKML.Point) = GI.PointTrait()

@@ -15,6 +15,7 @@ XML = "72c71f33-b9b6-44de-8c94-c961784809e2"
 
 [weakdeps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+GeoFormatTypes = "68eda718-8dee-11e9-39e7-89f7f65f511f"
 GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 REPL = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -22,7 +23,7 @@ ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
 
 [extensions]
 FastKMLDataFramesExt = "DataFrames"
-FastKMLGeoInterfaceExt = "GeoInterface"
+FastKMLGeoInterfaceExt = ["GeoFormatTypes", "GeoInterface"]
 FastKMLMakieExt = "Makie"
 FastKMLREPLExt = "REPL"
 FastKMLZipArchivesExt = "ZipArchives"
@@ -30,7 +31,8 @@ FastKMLZipArchivesExt = "ZipArchives"
 [compat]
 Automa = "1.1"
 DataFrames = "1"
-GeoInterface = "1.3"
+GeoFormatTypes = "0.4"
+GeoInterface = "1.3.6"
 Makie = "0.24"
 OrderedCollections = "1.0.1, 2.0"
 Parsers = "2.8, 3"
