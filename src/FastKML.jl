@@ -72,13 +72,13 @@ Base.firstindex(k::KMLFile) = 1
 Base.lastindex(k::KMLFile) = length(k.children)
 
 # Optional: Add similar functionality for Document and Folder
-Base.iterate(d::Document, state...) = d.Features === nothing ? nothing : iterate(d.Features, state...)
-Base.length(d::Document) = d.Features === nothing ? 0 : length(d.Features)
-Base.getindex(d::Document, i) = d.Features === nothing ? throw(BoundsError(d, i)) : d.Features[i]
+Base.iterate(d::Document, state...) = (fs = d.Features; fs === nothing ? nothing : iterate(fs, state...))
+Base.length(d::Document) = (fs = d.Features; fs === nothing ? 0 : length(fs))
+Base.getindex(d::Document, i) = (fs = d.Features; fs === nothing ? throw(BoundsError(d, i)) : fs[i])
 
-Base.iterate(f::Folder, state...) = f.Features === nothing ? nothing : iterate(f.Features, state...)
-Base.length(f::Folder) = f.Features === nothing ? 0 : length(f.Features)
-Base.getindex(f::Folder, i) = f.Features === nothing ? throw(BoundsError(f, i)) : f.Features[i]
+Base.iterate(f::Folder, state...) = (fs = f.Features; fs === nothing ? nothing : iterate(fs, state...))
+Base.length(f::Folder) = (fs = f.Features; fs === nothing ? 0 : length(fs))
+Base.getindex(f::Folder, i) = (fs = f.Features; fs === nothing ? throw(BoundsError(f, i)) : fs[i])
 
 # ─── Initialization ──────────────────────────────────────────────────────────
 

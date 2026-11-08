@@ -255,7 +255,7 @@ function handle_polygon_boundary!(polygon, boundary_node::XMLAnyNode, boundary_t
     
     if boundary_type === :outerBoundaryIs
         lr_node = @find_immediate_child boundary_node c begin
-            XML.nodetype(c) === XML.Element && tagsym(XML.tag(c)) === :LinearRing
+            XML.nodetype(c) === XML.Element && tagsym(XML.tag(c)::AbstractString) === :LinearRing
         end
         
         if lr_node !== nothing
@@ -272,8 +272,10 @@ function handle_polygon_boundary!(polygon, boundary_node::XMLAnyNode, boundary_t
         end
         
     elseif boundary_type === :innerBoundaryIs
-        if getfield(polygon, :innerBoundaryIs) === nothing
-            setfield!(polygon, :innerBoundaryIs, Types.LinearRing[])
+        rings = getfield(polygon, :innerBoundaryIs)
+        if rings === nothing
+            rings = Types.LinearRing[]
+            setfield!(polygon, :innerBoundaryIs, rings)
         end
         
         rings_processed = 0
@@ -282,16 +284,17 @@ function handle_polygon_boundary!(polygon, boundary_node::XMLAnyNode, boundary_t
         @for_each_immediate_child boundary_node lr_node begin
             if XML.nodetype(lr_node) === XML.Element
                 element_count += 1
-                if tagsym(XML.tag(lr_node)) === :LinearRing
+                lr_tag = XML.tag(lr_node)::AbstractString
+                if tagsym(lr_tag) === :LinearRing
                     lr_obj = object_fn(lr_node)
                     if lr_obj isa Types.LinearRing
-                        push!(getfield(polygon, :innerBoundaryIs), lr_obj)
+                        push!(rings, lr_obj)
                         rings_processed += 1
                     else
                         @content_warn (:inner_ring,) "LinearRing in <innerBoundaryIs> didn't parse correctly"
                     end
                 else
-                    @content_warn (:inner_boundary_child, String(XML.tag(lr_node))) "<innerBoundaryIs> contained non-LinearRing element: <$(XML.tag(lr_node))>"
+                    @content_warn (:inner_boundary_child, String(lr_tag)) "<innerBoundaryIs> contained non-LinearRing element: <$lr_tag>"
                 end
             end
         end

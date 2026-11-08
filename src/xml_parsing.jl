@@ -184,7 +184,8 @@ end
 # name, such as that of an abstract type like `Feature`, is not instantiated: the element
 # is left out, with a warning, and the rest of the file is read.
 function _object_slow(node::XMLAnyNode)
-    original_tag_name = XML.tag(node)
+    # `object` has checked that `node` is an element.
+    original_tag_name = XML.tag(node)::AbstractString
     sym = tagsym(original_tag_name)
     @content_warn (:unhandled_tag, String(original_tag_name)) "Unhandled Tag: `'$original_tag_name'` (symbol: `:$sym`). This tag was not recognized."
     return nothing
