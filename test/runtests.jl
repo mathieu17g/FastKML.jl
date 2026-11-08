@@ -1886,6 +1886,18 @@ end
         file = @test_logs (:warn, r"Unhandled Tag") match_mode = :any parse(KMLFile, s)
         @test file.children[1].name == "kept"
     end
+
+    # A node that is not an element has no tag to resolve, even when it has a name, as a
+    # processing instruction does: `object` says so with an `ArgumentError` that names the
+    # type of the node.
+    xml = """<?xml version="1.0"?><?pi data?><a>text<!-- c --></a>"""
+    node, lazy = XML.parse(xml, XML.Node), XML.parse(xml, XML.LazyNode)
+    cases = ("processing instruction" => node[2], "text" => node[3][1],
+             "comment" => node[3][2], "text of a LazyNode" => lazy[3][1])
+    @testset "$label" for (label, n) in cases
+        @test_throws ArgumentError object(n)
+        @test_throws "got a $(XML.nodetype(n)) node" object(n)
+    end
 end
 
 # ── Network-gated integration tests vs ArchGDAL ─────────────────────────────
