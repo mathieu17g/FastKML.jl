@@ -38,28 +38,13 @@ function _top_level_features(file::KMLFile)::Vector{Feature}
     feats = Feature[c for c in file.children if c isa Feature]
     if isempty(feats)
         for c in file.children
-            if (c isa Document || c isa Folder) && c.Features !== nothing
-                append!(feats, c.Features)
+            if c isa Document || c isa Folder
+                features = c.Features
+                features === nothing || append!(feats, features)
             end
         end
     end
     feats
-end
-
-function _determine_layers(features::Vector{Feature})
-    if length(features) == 1
-        f = features[1]
-        if f isa Document || f isa Folder
-            sub = (f.Features !== nothing ? f.Features : Feature[])
-            return [x for x in sub if x isa Document || x isa Folder], Placemark[x for x in sub if x isa Placemark], f
-        else
-            return Feature[], (f isa Placemark ? [f] : Placemark[]), nothing
-        end
-    else
-        return [x for x in features if x isa Document || x isa Folder],
-        Placemark[x for x in features if x isa Placemark],
-        nothing
-    end
 end
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -130,7 +115,7 @@ function _lazy_top_level_features(file::LazyKMLFile)
     c = Cursor(kml_elem); next!(c)
     @for_each_child c child begin
         if XML.nodetype(child) === XML.Element
-            _is_feature_tag(tag(child)) && push!(features, LazyNode(child))
+            _is_feature_tag(tag(child)::AbstractString) && push!(features, LazyNode(child))
             skip_element!(child)
         end
     end
@@ -166,8 +151,9 @@ end
 
 function _count_placemarks_recursive(container::Union{Document, Folder})::Int
     count = 0
-    if container.Features !== nothing
-        for feat in container.Features
+    features = container.Features
+    if features !== nothing
+        for feat in features
             if feat isa Placemark
                 count += 1
             elseif feat isa Document || feat isa Folder
@@ -272,8 +258,9 @@ function get_layer_info(file::Union{KMLFile,LazyKMLFile})
     if file isa LazyKMLFile
         lock(file._lock) do
             # Check cache first
-            if file._layer_info_cache !== nothing
-                return file._layer_info_cache
+            cached = file._layer_info_cache
+            if cached !== nothing
+                return cached
             end
             
             # Built outside this closure (see `_build_lazy_layer_info`): the discovery
@@ -297,11 +284,12 @@ function get_layer_info(file::Union{KMLFile,LazyKMLFile})
 
         if length(top_feats) == 1 && (top_feats[1] isa Document || top_feats[1] isa Folder)
             main_container = top_feats[1]
-            if main_container.Features !== nothing
-                for feat in main_container.Features
+            container_features = main_container.Features
+            if container_features !== nothing
+                for feat in container_features
                     if feat isa Document || feat isa Folder
                         idx_counter += 1
-                        layer_name = feat.name !== nothing ? feat.name : "<Unnamed Container>"
+                        layer_name = something(feat.name, "<Unnamed Container>")
                         push!(layer_infos, (idx_counter, layer_name, feat))
                     end
                 end
@@ -313,7 +301,7 @@ function get_layer_info(file::Union{KMLFile,LazyKMLFile})
                         layer_infos,
                         (
                             idx_counter,
-                            "<Placemarks in $(main_container.name !== nothing ? main_container.name : "Top Container")>",
+                            "<Placemarks in $(something(main_container.name, "Top Container"))>",
                             direct_pms_in_container,
                         ),
                     )
@@ -329,7 +317,7 @@ function get_layer_info(file::Union{KMLFile,LazyKMLFile})
             for feat in top_feats
                 if feat isa Document || feat isa Folder
                     idx_counter += 1
-                    layer_name = feat.name !== nothing ? feat.name : "<Unnamed Container>"
+                    layer_name = something(feat.name, "<Unnamed Container>")
                     push!(layer_infos, (idx_counter, layer_name, feat))
                 end
             end

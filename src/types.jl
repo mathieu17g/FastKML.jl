@@ -976,7 +976,7 @@ function _create_tagsym_cache()
     
     # 2. Add all field names from all KML types
     for T in all_concrete_subtypes(KMLElement)
-        for field in fieldnames(T)
+        for field in fieldnames(T)::Tuple{Vararg{Symbol}}
             field_str = string(field)
             cache[field_str] = field
             

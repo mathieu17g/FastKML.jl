@@ -17,8 +17,9 @@ If a MultiGeometry contains only one geometry, return that geometry directly.
 Otherwise return the MultiGeometry unchanged.
 """
 function unwrap_single_part_multigeometry(geom::MultiGeometry)
-    if geom.Geometries !== nothing && length(geom.Geometries) == 1
-        return geom.Geometries[1]
+    geometries = geom.Geometries
+    if geometries !== nothing && length(geometries) == 1
+        return geometries[1]
     end
     return geom
 end
@@ -41,7 +42,8 @@ function find_placemarks(container::Union{Document, Folder, KMLFile};
     features = if container isa KMLFile
         Feature[f for f in container.children if f isa Feature]
     else
-        container.Features === nothing ? Feature[] : container.Features
+        fs = container.Features
+        fs === nothing ? Feature[] : fs
     end
     
     for feat in features
@@ -50,7 +52,7 @@ function find_placemarks(container::Union{Document, Folder, KMLFile};
             matches = true
             
             if name_pattern !== nothing
-                name = feat.name === nothing ? "" : feat.name
+                name = something(feat.name, "")
                 if name_pattern isa Regex
                     matches &= occursin(name_pattern, name)
                 else
@@ -97,7 +99,8 @@ function count_features(container::Union{Document, Folder, KMLFile})
     features = if container isa KMLFile
         Feature[f for f in container.children if f isa Feature]
     else
-        container.Features === nothing ? Feature[] : container.Features
+        fs = container.Features
+        fs === nothing ? Feature[] : fs
     end
     
     for feat in features
@@ -125,10 +128,8 @@ end
 Calculate the bounding box of a geometry.
 """
 function get_bounds(geom::Point)
-    if geom.coordinates === nothing
-        return nothing
-    end
     c = geom.coordinates
+    c === nothing && return nothing
     return (c[1], c[2], c[1], c[2])
 end
 
@@ -136,7 +137,7 @@ function get_bounds(geom::Union{LineString, Polygon})
     coords = if geom isa LineString
         geom.coordinates
     else  # Polygon
-        geom.outerBoundaryIs === nothing ? nothing : geom.outerBoundaryIs.coordinates
+        geom.outerBoundaryIs.coordinates  # a LinearRing, never `nothing`
     end
     
     if coords === nothing || isempty(coords)
@@ -157,14 +158,15 @@ function get_bounds(geom::Union{LineString, Polygon})
 end
 
 function get_bounds(geom::MultiGeometry)
-    if geom.Geometries === nothing || isempty(geom.Geometries)
+    geometries = geom.Geometries
+    if geometries === nothing || isempty(geometries)
         return nothing
     end
     
     min_lon = min_lat = Inf
     max_lon = max_lat = -Inf
     
-    for g in geom.Geometries
+    for g in geometries
         bounds = get_bounds(g)
         if bounds !== nothing
             min_lon = min(min_lon, bounds[1])
@@ -188,8 +190,9 @@ function get_bounds(container::Union{Document, Folder, KMLFile})
     placemarks = find_placemarks(container; has_geometry=true)
     
     for pm in placemarks
-        if pm.Geometry !== nothing
-            bounds = get_bounds(pm.Geometry)
+        geometry = pm.Geometry
+        if geometry !== nothing
+            bounds = get_bounds(geometry)
             if bounds !== nothing
                 min_lon = min(min_lon, bounds[1])
                 min_lat = min(min_lat, bounds[2])
@@ -220,9 +223,8 @@ function merge_kml_files(files::KMLFile...; name::String="Merged Document")
             if child isa Feature
                 push!(all_features, child)
             elseif child isa Document || child isa Folder
-                if child.Features !== nothing
-                    append!(all_features, child.Features)
-                end
+                features = child.Features
+                features === nothing || append!(all_features, features)
             end
         end
     end
@@ -244,14 +246,16 @@ Extract all style definitions from a container.
 function extract_styles(container::Union{Document, KMLFile})
     styles = StyleSelector[]
     
-    if container isa Document && container.StyleSelectors !== nothing
-        append!(styles, container.StyleSelectors)
+    if container isa Document
+        selectors = container.StyleSelectors
+        selectors === nothing || append!(styles, selectors)
     elseif container isa KMLFile
         for child in container.children
             if child isa StyleSelector
                 push!(styles, child)
-            elseif child isa Document && child.StyleSelectors !== nothing
-                append!(styles, child.StyleSelectors)
+            elseif child isa Document
+                selectors = child.StyleSelectors
+                selectors === nothing || append!(styles, selectors)
             end
         end
     end
@@ -266,11 +270,12 @@ end
 Extract a path as (lon, lat) tuples from a LineString.
 """
 function extract_path(ls::LineString)
-    if ls.coordinates === nothing
+    coords = ls.coordinates
+    if coords === nothing
         return Tuple{Float64, Float64}[]
     end
     
-    return [(c[1], c[2]) for c in ls.coordinates]
+    return [(c[1], c[2]) for c in coords]
 end
 
 # ─── Metadata Utilities ──────────────────────────────────────────────────────
@@ -289,14 +294,17 @@ function get_metadata(pm::Placemark)
     metadata[:styleUrl] = pm.styleUrl
     
     # Geometry type
-    if pm.Geometry !== nothing
-        metadata[:geometry_type] = string(typeof(pm.Geometry).name.name)
+    geometry = pm.Geometry
+    if geometry !== nothing
+        metadata[:geometry_type] = string(typeof(geometry).name.name)
     end
     
     # Extended data if present
-    if pm.ExtendedData !== nothing && pm.ExtendedData.children !== nothing
+    extended_data = pm.ExtendedData
+    data_children = extended_data === nothing ? nothing : extended_data.children
+    if data_children !== nothing
         extended = Dict{String, Any}()
-        for child in pm.ExtendedData.children
+        for child in data_children
             if hasproperty(child, :name) && hasproperty(child, :value)
                 extended[child.name] = child.value
             end
@@ -342,13 +350,14 @@ end
 Calculate the total length of a LineString path in meters.
 """
 function path_length(ls::LineString)
-    if ls.coordinates === nothing || length(ls.coordinates) < 2
+    coords = ls.coordinates
+    if coords === nothing || length(coords) < 2
         return 0.0
     end
     
     total_length = 0.0
-    for i in 2:length(ls.coordinates)
-        total_length += haversine_distance(ls.coordinates[i-1], ls.coordinates[i])
+    for i in 2:length(coords)
+        total_length += haversine_distance(coords[i-1], coords[i])
     end
     
     return total_length

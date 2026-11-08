@@ -270,7 +270,7 @@ function parse_datetime_with_timezone(s::AbstractString, format::Symbol)
         throw(ArgumentError("No timezone found"))
     end
     
-    tz_str = tz_match.captures[1]
+    tz_str = something(tz_match.captures[1])
     dt = read_datetime(@view(s[1:tz_match.offset-1]), format == :datetime_tz_basic)
     dt isa DateTime || return dt
 

@@ -44,55 +44,42 @@ function children(k::KMLFile)
 end
 
 function children(doc::Document)
-    return doc.Features === nothing ? Feature[] : doc.Features
+    features = doc.Features
+    return features === nothing ? Feature[] : features
 end
 
 function children(folder::Folder)
-    return folder.Features === nothing ? Feature[] : folder.Features
+    features = folder.Features
+    return features === nothing ? Feature[] : features
 end
 
 # For Placemark - return geometry and other significant elements
 function children(placemark::Placemark)
     result = KMLElement[]
-    if placemark.Geometry !== nothing
-        push!(result, placemark.Geometry)
-    end
-    # Also include other child elements like ExtendedData if present
-    if placemark.ExtendedData !== nothing
-        push!(result, placemark.ExtendedData)
-    end
-    if placemark.Region !== nothing
-        push!(result, placemark.Region)
-    end
-    if placemark.AbstractView !== nothing
-        push!(result, placemark.AbstractView)
-    end
-    if placemark.TimePrimitive !== nothing
-        push!(result, placemark.TimePrimitive)
+    # The geometry, then other child elements like ExtendedData, when present
+    for child in (placemark.Geometry, placemark.ExtendedData, placemark.Region,
+                  placemark.AbstractView, placemark.TimePrimitive)
+        child === nothing || push!(result, child)
     end
     # Include style selectors if present
-    if placemark.StyleSelectors !== nothing && !isempty(placemark.StyleSelectors)
-        append!(result, placemark.StyleSelectors)
+    selectors = placemark.StyleSelectors
+    if selectors !== nothing && !isempty(selectors)
+        append!(result, selectors)
     end
     return result
 end
 
 # For MultiGeometry
 function children(mg::MultiGeometry)
-    return mg.Geometries === nothing ? Geometry[] : mg.Geometries
+    geometries = mg.Geometries
+    return geometries === nothing ? Geometry[] : geometries
 end
 
 # For NetworkLink
 function children(nl::NetworkLink)
     result = KMLElement[]
-    if nl.Link !== nothing
-        push!(result, nl.Link)
-    end
-    if nl.Region !== nothing
-        push!(result, nl.Region)
-    end
-    if nl.AbstractView !== nothing
-        push!(result, nl.AbstractView)
+    for child in (nl.Link, nl.Region, nl.AbstractView)
+        child === nothing || push!(result, child)
     end
     return result
 end
@@ -100,46 +87,25 @@ end
 # For Overlay types (GroundOverlay, ScreenOverlay, PhotoOverlay)
 function children(overlay::Overlay)
     result = KMLElement[]
-    if overlay.Icon !== nothing
-        push!(result, overlay.Icon)
-    end
-    if overlay.Region !== nothing
-        push!(result, overlay.Region)
+    for child in (overlay.Icon, overlay.Region)
+        child === nothing || push!(result, child)
     end
     # GroundOverlay specific
     if overlay isa GroundOverlay
-        if overlay.LatLonBox !== nothing
-            push!(result, overlay.LatLonBox)
-        end
-        if overlay.gx_LatLonQuad !== nothing
-            push!(result, overlay.gx_LatLonQuad)
+        for child in (overlay.LatLonBox, overlay.gx_LatLonQuad)
+            child === nothing || push!(result, child)
         end
     end
     # ScreenOverlay specific
     if overlay isa ScreenOverlay
-        if overlay.overlayXY !== nothing
-            push!(result, overlay.overlayXY)
-        end
-        if overlay.screenXY !== nothing
-            push!(result, overlay.screenXY)
-        end
-        if overlay.rotationXY !== nothing
-            push!(result, overlay.rotationXY)
-        end
-        if overlay.size !== nothing
-            push!(result, overlay.size)
+        for child in (overlay.overlayXY, overlay.screenXY, overlay.rotationXY, overlay.size)
+            child === nothing || push!(result, child)
         end
     end
     # PhotoOverlay specific
     if overlay isa PhotoOverlay
-        if overlay.ViewVolume !== nothing
-            push!(result, overlay.ViewVolume)
-        end
-        if overlay.ImagePyramid !== nothing
-            push!(result, overlay.ImagePyramid)
-        end
-        if overlay.Point !== nothing
-            push!(result, overlay.Point)
+        for child in (overlay.ViewVolume, overlay.ImagePyramid, overlay.Point)
+            child === nothing || push!(result, child)
         end
     end
     return result
@@ -149,39 +115,37 @@ end
 function children(style::Style)
     result = SubStyle[]
     # Collect all substyles
-    for field in (:IconStyle, :LabelStyle, :LineStyle, :PolyStyle, :BalloonStyle, :ListStyle)
-        substyle = getfield(style, field)
-        if substyle !== nothing
-            push!(result, substyle)
-        end
+    for substyle in (style.IconStyle, style.LabelStyle, style.LineStyle, style.PolyStyle,
+                     style.BalloonStyle, style.ListStyle)
+        substyle === nothing || push!(result, substyle)
     end
     return result
 end
 
 # For StyleMap
 function children(stylemap::StyleMap)
-    return stylemap.Pairs === nothing ? StyleMapPair[] : stylemap.Pairs
+    map_pairs = stylemap.Pairs
+    return map_pairs === nothing ? StyleMapPair[] : map_pairs
 end
 
 # For ExtendedData
 function children(ed::ExtendedData)
-    return ed.children === nothing ? KMLElement[] : ed.children
+    data = ed.children
+    return data === nothing ? KMLElement[] : data
 end
 
 # For SchemaData
 function children(sd::SchemaData)
-    return sd.SimpleDataVec === nothing ? SimpleData[] : sd.SimpleDataVec
+    simple_data = sd.SimpleDataVec
+    return simple_data === nothing ? SimpleData[] : simple_data
 end
 
 # For Tour
 function children(tour::gx_Tour)
     result = KMLElement[]
-    if tour.gx_Playlist !== nothing
-        push!(result, tour.gx_Playlist)
-    end
-    # Include other potential children
-    if tour.AbstractView !== nothing
-        push!(result, tour.AbstractView)
+    # The playlist, then other potential children
+    for child in (tour.gx_Playlist, tour.AbstractView)
+        child === nothing || push!(result, child)
     end
     return result
 end
@@ -193,39 +157,31 @@ end
 
 # For Update
 function children(update::Update)
-    return update.operations === nothing ? AbstractUpdateOperation[] : update.operations
+    operations = update.operations
+    return operations === nothing ? AbstractUpdateOperation[] : operations
 end
 
 # For Create/Delete/Change operations
 function children(create::Types.Create)
-    return create.CreatedObjects === nothing ? KMLElement[] : create.CreatedObjects
+    created = create.CreatedObjects
+    return created === nothing ? KMLElement[] : created
 end
 
 function children(delete::Types.Delete)
-    return delete.FeaturesToDelete === nothing ? Feature[] : delete.FeaturesToDelete
+    features = delete.FeaturesToDelete
+    return features === nothing ? Feature[] : features
 end
 
 function children(change::Types.Change)
-    return change.ObjectsToChange === nothing ? Types.Object[] : change.ObjectsToChange
+    objects = change.ObjectsToChange
+    return objects === nothing ? Types.Object[] : objects
 end
 
 # For Model
 function children(model::Types.Model)
     result = KMLElement[]
-    if model.Location !== nothing
-        push!(result, model.Location)
-    end
-    if model.Orientation !== nothing
-        push!(result, model.Orientation)
-    end
-    if model.Scale !== nothing
-        push!(result, model.Scale)
-    end
-    if model.Link !== nothing
-        push!(result, model.Link)
-    end
-    if model.ResourceMap !== nothing
-        push!(result, model.ResourceMap)
+    for child in (model.Location, model.Orientation, model.Scale, model.Link, model.ResourceMap)
+        child === nothing || push!(result, child)
     end
     return result
 end
@@ -238,13 +194,10 @@ end
 # For Polygon - could return boundaries as "children" for consistency
 function children(poly::Polygon)
     result = KMLElement[]
-    # Note: outerBoundaryIs is a LinearRing, not wrapped in a boundary element
-    if poly.outerBoundaryIs !== nothing
-        push!(result, poly.outerBoundaryIs)
-    end
-    if poly.innerBoundaryIs !== nothing
-        append!(result, poly.innerBoundaryIs)
-    end
+    # outerBoundaryIs is a LinearRing, never `nothing`, not wrapped in a boundary element
+    push!(result, poly.outerBoundaryIs)
+    inner = poly.innerBoundaryIs
+    inner === nothing || append!(result, inner)
     return result
 end
 

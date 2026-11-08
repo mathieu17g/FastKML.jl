@@ -24,7 +24,7 @@ function validate_coordinates(coords::Union{Coord2, Coord3})
         return false, "Latitude $lat is out of range [-90, 90]"
     end
     
-    if length(coords) == 3
+    if coords isa Coord3
         alt = coords[3]
         # Altitude can technically be any value, but warn on extremes
         if abs(alt) > MAX_ALTITUDE_METERS  
@@ -50,39 +50,42 @@ end
 Validate geometry objects according to KML/OGC standards.
 """
 function validate_geometry(geom::Point)
-    if geom.coordinates === nothing
+    coords = geom.coordinates
+    if coords === nothing
         return false, "Point has no coordinates"
     end
-    return validate_coordinates(geom.coordinates)
+    return validate_coordinates(coords)
 end
 
 function validate_geometry(geom::LineString)
-    if geom.coordinates === nothing || isempty(geom.coordinates)
+    coords = geom.coordinates
+    if coords === nothing || isempty(coords)
         return false, "LineString has no coordinates"
     end
     
-    if length(geom.coordinates) < 2
+    if length(coords) < 2
         return false, "LineString must have at least 2 points"
     end
     
-    return validate_coordinates(geom.coordinates)
+    return validate_coordinates(coords)
 end
 
 function validate_geometry(geom::LinearRing)
-    if geom.coordinates === nothing || isempty(geom.coordinates)
+    coords = geom.coordinates
+    if coords === nothing || isempty(coords)
         return false, "LinearRing has no coordinates"
     end
     
-    if length(geom.coordinates) < 4
+    if length(coords) < 4
         return false, "LinearRing must have at least 4 points"
     end
     
     # Check if ring is closed
-    if geom.coordinates[1] != geom.coordinates[end]
+    if coords[1] != coords[end]
         return false, "LinearRing is not closed (first point != last point)"
     end
     
-    return validate_coordinates(geom.coordinates)
+    return validate_coordinates(coords)
 end
 
 function validate_geometry(geom::Polygon)
@@ -96,8 +99,9 @@ function validate_geometry(geom::Polygon)
     end
     
     # Validate inner boundaries if present
-    if geom.innerBoundaryIs !== nothing
-        for (i, ring) in enumerate(geom.innerBoundaryIs)
+    inner = geom.innerBoundaryIs
+    if inner !== nothing
+        for (i, ring) in enumerate(inner)
             is_valid, msg = validate_geometry(ring)
             if !is_valid
                 return false, "Inner boundary $i: $msg"
@@ -109,11 +113,12 @@ function validate_geometry(geom::Polygon)
 end
 
 function validate_geometry(geom::MultiGeometry)
-    if geom.Geometries === nothing || isempty(geom.Geometries)
+    geometries = geom.Geometries
+    if geometries === nothing || isempty(geometries)
         return false, "MultiGeometry has no geometries"
     end
     
-    for (i, g) in enumerate(geom.Geometries)
+    for (i, g) in enumerate(geometries)
         is_valid, msg = validate_geometry(g)
         if !is_valid
             return false, "Geometry $i: $msg"
@@ -137,7 +142,8 @@ function validate_document_structure(doc::Document)
     issues = String[]
     
     # Check for empty document
-    if doc.Features === nothing || isempty(doc.Features)
+    features = doc.Features
+    if features === nothing || isempty(features)
         push!(issues, "Document has no features")
     end
     
@@ -146,13 +152,14 @@ function validate_document_structure(doc::Document)
     n_folders = 0
     n_documents = 0
     
-    if doc.Features !== nothing
-        for feat in doc.Features
+    if features !== nothing
+        for feat in features
             if feat isa Placemark
                 n_placemarks += 1
                 # Validate placemark geometry
-                if feat.Geometry !== nothing
-                    is_valid, msg = validate_geometry(feat.Geometry)
+                geometry = feat.Geometry
+                if geometry !== nothing
+                    is_valid, msg = validate_geometry(geometry)
                     if !is_valid
                         push!(issues, "Placemark '$(feat.name)': $msg")
                     end
@@ -177,18 +184,20 @@ end
 function validate_document_structure(folder::Folder)
     issues = String[]
     
-    if folder.Features === nothing || isempty(folder.Features)
+    features = folder.Features
+    if features === nothing || isempty(features)
         push!(issues, "Folder has no features")
     end
     
     # Similar validation as Document
     n_placemarks = 0
-    if folder.Features !== nothing
-        for feat in folder.Features
+    if features !== nothing
+        for feat in features
             if feat isa Placemark
                 n_placemarks += 1
-                if feat.Geometry !== nothing
-                    is_valid, msg = validate_geometry(feat.Geometry)
+                geometry = feat.Geometry
+                if geometry !== nothing
+                    is_valid, msg = validate_geometry(geometry)
                     if !is_valid
                         push!(issues, "Placemark '$(feat.name)': $msg")
                     end
@@ -232,15 +241,17 @@ function validate_polygon_orientation(poly::Polygon)
     issues = String[]
     
     # Check outer ring
-    if poly.outerBoundaryIs !== nothing && poly.outerBoundaryIs.coordinates !== nothing
-        if !is_ccw(poly.outerBoundaryIs)
+    outer = poly.outerBoundaryIs  # a LinearRing, never `nothing`
+    if outer.coordinates !== nothing
+        if !is_ccw(outer)
             push!(issues, "Outer ring is not counter-clockwise")
         end
     end
     
     # Check inner rings
-    if poly.innerBoundaryIs !== nothing
-        for (i, ring) in enumerate(poly.innerBoundaryIs)
+    inner = poly.innerBoundaryIs
+    if inner !== nothing
+        for (i, ring) in enumerate(inner)
             if ring.coordinates !== nothing && is_ccw(ring)
                 push!(issues, "Inner ring $i is not clockwise")
             end

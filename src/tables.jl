@@ -16,7 +16,6 @@ import ..Utils: unwrap_single_part_multigeometry
 import XML: XML, parse, Node, LazyNode, tag, children, attributes, Cursor, next!, skip_element!,
             @for_each_child
 using StaticArrays
-using Base.Iterators: flatten
 using TimeZones, Dates
 
 # Use the parent module's types to ensure consistent display
@@ -172,7 +171,8 @@ function _cursor_parse_geometry(c::Cursor, geom_tag)
                     @for_each_child c bch begin
                         if XML.nodetype(bch) === XML.Element && tag(bch) == "LinearRing"
                             ring = _cursor_parse_linear_ring(bch)
-                            if ring !== nothing && ring.coordinates !== nothing && !isempty(ring.coordinates)
+                            ring_coords = ring === nothing ? nothing : ring.coordinates
+                            if ring_coords !== nothing && !isempty(ring_coords)
                                 push!(inner_rings, ring)
                             end
                         end
@@ -211,7 +211,7 @@ function _cursor_parse_geometry(c::Cursor, geom_tag)
                     cs = parse_coordinates_automa(_cursor_text(ch))
                     if !isempty(cs)
                         cc = cs[1]
-                        push!(coord_vals, length(cc) == 3 ? Coord3(cc) : Coord3(cc[1], cc[2], 0.0))
+                        push!(coord_vals, cc isa Coord2 ? Coord3(cc[1], cc[2], 0.0) : Coord3(cc))
                     end
                 end
             end
@@ -320,7 +320,8 @@ function parse_geometry_lazy(geom_node::XMLAnyNode)
                     @for_each_immediate_child child boundary_child begin
                         if XML.nodetype(boundary_child) === XML.Element && tag(boundary_child) == "LinearRing"
                             ring = parse_linear_ring_lazy(boundary_child)
-                            if ring !== nothing && ring.coordinates !== nothing && !isempty(ring.coordinates)
+                            ring_coords = ring === nothing ? nothing : ring.coordinates
+                            if ring_coords !== nothing && !isempty(ring_coords)
                                 push!(inner_rings, ring)
                             end
                         end
@@ -369,7 +370,7 @@ function parse_geometry_lazy(geom_node::XMLAnyNode)
                 coords = parse_coordinates_automa(txt)
                 if !isempty(coords)
                     c = coords[1]
-                    push!(coord_vals, length(c) == 3 ? Coord3(c) : Coord3(c[1], c[2], 0.0))
+                    push!(coord_vals, c isa Coord2 ? Coord3(c[1], c[2], 0.0) : Coord3(c))
                 end
             end
         end
@@ -440,17 +441,29 @@ function _placemark_iterator(file::KMLFile, layer_spec::Union{Nothing,String,Int
     return _iter_feat(selected_source)
 end
 
-# Eager iteration
+# Eager iteration: the placemarks of `x`, depth first, in the order of the document
 function _iter_feat(x)
+    placemarks = Placemark[]
+    _push_placemarks!(placemarks, x)
+    return placemarks
+end
+
+function _push_placemarks!(placemarks::Vector{Placemark}, x)
     if x isa Placemark
-        return (x for _ = 1:1)
-    elseif (x isa Document || x isa Folder) && x.Features !== nothing
-        return flatten(_iter_feat.(x.Features))
+        push!(placemarks, x)
+    elseif x isa Document || x isa Folder
+        features = x.Features
+        if features !== nothing
+            for f in features
+                _push_placemarks!(placemarks, f)
+            end
+        end
     elseif x isa AbstractVector{<:Feature}
-        return flatten(_iter_feat.(x))
-    else
-        return ()
+        for f in x
+            _push_placemarks!(placemarks, f)
+        end
     end
+    return placemarks
 end
 
 # Lazy iterator for LazyKMLFile
@@ -525,10 +538,10 @@ else
 end
 
 function Tables.rows(tbl::PlacemarkTable)
-    if tbl.layer === :all
-        return _all_layers_rows(tbl)
-    end
-    it = _placemark_iterator(tbl.file, tbl.layer)
+    layer = tbl.layer
+    # The constructor accepts no other Symbol than `:all`.
+    layer isa Symbol && return _all_layers_rows(tbl)
+    it = _placemark_iterator(tbl.file, layer)
 
     if tbl.file isa LazyKMLFile
         # Lazy path - data is already in the right format
@@ -545,12 +558,8 @@ function Tables.rows(tbl::PlacemarkTable)
         # Eager path - existing logic
         return (
             let pl = pl
-                desc = if pl.description === nothing
-                    ""
-                else
-                    pl.description
-                end
-                name_str = pl.name === nothing ? "" : pl.name
+                desc = something(pl.description, "")
+                name_str = something(pl.name, "")
                 processed_name = if pl.name !== nothing && occursin('&', name_str)
                     decode_named_entities(name_str)
                 else
@@ -595,8 +604,8 @@ function _all_layers_rows(tbl::PlacemarkTable)
         return Iterators.flatten(
             (
                 let idx = idx, lname = lname, pl = pl
-                    desc = pl.description === nothing ? "" : pl.description
-                    name_str = pl.name === nothing ? "" : pl.name
+                    desc = something(pl.description, "")
+                    name_str = something(pl.name, "")
                     processed_name = if pl.name !== nothing && occursin('&', name_str)
                         decode_named_entities(name_str)
                     else
