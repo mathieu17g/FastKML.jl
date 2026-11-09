@@ -162,6 +162,30 @@ end
         @test GeoInterface.ncoord(mg) == 0
         @test sprint(show, mg) == "GeometryCollection with 1 geometry"
     end
+
+    # The display gives the trait, with Z for three dimensions, a count, and the first two
+    # points of a line or of the outer ring of a polygon.
+    line = LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0),
+                                     SVector(2.0, 0.0)])
+    line3 = LineString(coordinates = [SVector(0.0, 0.0, 5.0), SVector(1.0, 1.0, 6.0)])
+    square = [SVector(0.0, 0.0), SVector(4.0, 0.0), SVector(4.0, 4.0), SVector(0.0, 0.0)]
+    @test sprint(show, line) == "LineString with 3 points ((0.0 0.0), (1.0 1.0), ...)"
+    @test sprint(show, line3) == "LineString Z with 2 points ((0.0 0.0 5.0), (1.0 1.0 6.0))"
+    @test sprint(show, LineString()) == "LineString with 0 parts"
+    @test sprint(show, LinearRing(coordinates = square)) ==
+          "LinearRing with 4 points ((0.0 0.0), (4.0 0.0), ...)"
+    @test sprint(show, Polygon(outerBoundaryIs = LinearRing(coordinates = square))) ==
+          "Polygon with 1 ring (outer: (0.0 0.0), (4.0 0.0), ...)"
+    lines = MultiGeometry(Geometries = Geometry[line, line3])
+    @test GeoInterface.geomtrait(lines) == GeoInterface.MultiLineStringTrait()
+    @test sprint(show, lines) == "MultiLineString with 2 parts"
+
+    # Colors come on request, except in the cells of a table, which are compact and limited.
+    colored = sprint(show, line; context = :color => true)
+    @test colored != sprint(show, line)
+    @test replace(colored, r"\e\[[0-9;]*m" => "") == sprint(show, line)
+    cell = sprint(show, line; context = (:color => true, :compact => true, :limit => true))
+    @test cell == sprint(show, line)
 end
 
 @testset "KMLFile roundtrip" begin

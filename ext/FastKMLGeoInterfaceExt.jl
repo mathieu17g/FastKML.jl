@@ -18,82 +18,89 @@ GI.isgeometry(::Type{<:FastKML.Geometry}) = true
 GI.crs(::FastKML.Geometry) = GeoFormatTypes.EPSG(4326)
 GI.crs(::FastKML.Placemark) = GeoFormatTypes.EPSG(4326)
 
+# An optional list is read once into a local. An absent list counts as an empty one:
+# indexing it is out of bounds, as for the features of a Document.
+_count(list) = list === nothing ? 0 : length(list)
+_at(list, owner, i) = list === nothing ? throw(BoundsError(owner, i)) : list[i]
+# Number of dimensions of a list of points: that of its first point, 0 without points
+_dims(points) = (points === nothing || isempty(points)) ? 0 : length(points[1])
+
 # --- Point ---
 GI.geomtrait(::FastKML.Point) = GI.PointTrait()
 GI.ngeom(::GI.PointTrait, geom::FastKML.Point) = 0 # A point has no sub-geometries
-GI.ncoord(::GI.PointTrait, geom::FastKML.Point) = geom.coordinates === nothing ? 0 : length(geom.coordinates)
-GI.getcoord(::GI.PointTrait, geom::FastKML.Point, i::Integer) = geom.coordinates[i]
+GI.ncoord(::GI.PointTrait, geom::FastKML.Point) = _count(geom.coordinates)
+GI.getcoord(::GI.PointTrait, geom::FastKML.Point, i::Integer) =
+    _at(geom.coordinates, geom, i)
 
-# --- LineString ---
+# --- LineString and LinearRing: number of points, points wrapped in a FastKML.Point, and
+# number of dimensions ---
 GI.geomtrait(::FastKML.LineString) = GI.LineStringTrait()
-GI.ngeom(::GI.LineStringTrait, geom::FastKML.LineString) = geom.coordinates === nothing ? 0 : length(geom.coordinates) # Number of points
-GI.getgeom(::GI.LineStringTrait, geom::FastKML.LineString, i::Integer) = FastKML.Point(coordinates=geom.coordinates[i]) # Wrap point in FastKML.Point
-GI.ncoord(::GI.LineStringTrait, geom::FastKML.LineString) = # Number of dimensions
-    (geom.coordinates === nothing || isempty(geom.coordinates)) ? 0 : length(geom.coordinates[1])
+GI.ngeom(::GI.LineStringTrait, geom::FastKML.LineString) = _count(geom.coordinates)
+GI.getgeom(::GI.LineStringTrait, geom::FastKML.LineString, i::Integer) =
+    FastKML.Point(coordinates = _at(geom.coordinates, geom, i))
+GI.ncoord(::GI.LineStringTrait, geom::FastKML.LineString) = _dims(geom.coordinates)
 
-# --- LinearRing ---
 GI.geomtrait(::FastKML.LinearRing) = GI.LinearRingTrait()
-GI.ngeom(::GI.LinearRingTrait, geom::FastKML.LinearRing) = geom.coordinates === nothing ? 0 : length(geom.coordinates) # Number of points
-GI.getgeom(::GI.LinearRingTrait, geom::FastKML.LinearRing, i::Integer) = FastKML.Point(coordinates=geom.coordinates[i]) # Wrap point in FastKML.Point
-GI.ncoord(::GI.LinearRingTrait, geom::FastKML.LinearRing) = # Number of dimensions
-    (geom.coordinates === nothing || isempty(geom.coordinates)) ? 0 : length(geom.coordinates[1])
+GI.ngeom(::GI.LinearRingTrait, geom::FastKML.LinearRing) = _count(geom.coordinates)
+GI.getgeom(::GI.LinearRingTrait, geom::FastKML.LinearRing, i::Integer) =
+    FastKML.Point(coordinates = _at(geom.coordinates, geom, i))
+GI.ncoord(::GI.LinearRingTrait, geom::FastKML.LinearRing) = _dims(geom.coordinates)
 
-# --- Polygon ---
+# --- Polygon: its rings, the outer one first ---
 GI.geomtrait(::FastKML.Polygon) = GI.PolygonTrait()
-GI.ngeom(::GI.PolygonTrait, geom::FastKML.Polygon) = 1 + (geom.innerBoundaryIs === nothing ? 0 : length(geom.innerBoundaryIs)) # Number of rings
-GI.getgeom(::GI.PolygonTrait, geom::FastKML.Polygon, i::Integer) =
-    i == 1 ? geom.outerBoundaryIs : geom.innerBoundaryIs[i-1] # Returns a FastKML.LinearRing
-GI.ncoord(::GI.PolygonTrait, geom::FastKML.Polygon) = # Number of dimensions
-    (geom.outerBoundaryIs === nothing || geom.outerBoundaryIs.coordinates === nothing || isempty(geom.outerBoundaryIs.coordinates)) ? 0 : length(geom.outerBoundaryIs.coordinates[1])
+GI.ngeom(::GI.PolygonTrait, geom::FastKML.Polygon) = 1 + _count(geom.innerBoundaryIs)
+function GI.getgeom(::GI.PolygonTrait, geom::FastKML.Polygon, i::Integer) # A LinearRing
+    i == 1 && return geom.outerBoundaryIs
+    inner = geom.innerBoundaryIs
+    return inner === nothing ? throw(BoundsError(geom, i)) : inner[i-1]
+end
+GI.ncoord(::GI.PolygonTrait, geom::FastKML.Polygon) =
+    _dims(geom.outerBoundaryIs.coordinates)
 
 # --- MultiGeometry (Dynamic Trait Dispatch) ---
 function GI.geomtrait(mg::FastKML.MultiGeometry)
-    if mg.Geometries === nothing || isempty(mg.Geometries)
+    geoms = mg.Geometries
+    if geoms === nothing || isempty(geoms)
         return GI.GeometryCollectionTrait()
     end
-    
-    first_geom_type = typeof(mg.Geometries[1])
 
-    if first_geom_type <: FastKML.Polygon && all(g -> isa(g, FastKML.Polygon), mg.Geometries)
+    first_geom_type = typeof(geoms[1])
+
+    if first_geom_type <: FastKML.Polygon && all(g -> isa(g, FastKML.Polygon), geoms)
         return GI.MultiPolygonTrait()
-    elseif first_geom_type <: FastKML.LineString && all(g -> isa(g, FastKML.LineString), mg.Geometries)
+    elseif first_geom_type <: FastKML.LineString &&
+           all(g -> isa(g, FastKML.LineString), geoms)
         return GI.MultiLineStringTrait()
-    elseif first_geom_type <: FastKML.Point && all(g -> isa(g, FastKML.Point), mg.Geometries)
+    elseif first_geom_type <: FastKML.Point && all(g -> isa(g, FastKML.Point), geoms)
         return GI.MultiPointTrait()
     else
         return GI.GeometryCollectionTrait()
     end
 end
 
-# Methods for FastKML.MultiGeometry based on its dynamically determined trait
+# Number of dimensions of a geometry, 0 for one without a GeoInterface trait (a Model or a
+# track). One method per type, so that each trait meets only its own geometry type.
+_ncoord(g::FastKML.Point) = GI.ncoord(GI.PointTrait(), g)
+_ncoord(g::FastKML.LineString) = GI.ncoord(GI.LineStringTrait(), g)
+_ncoord(g::FastKML.LinearRing) = GI.ncoord(GI.LinearRingTrait(), g)
+_ncoord(g::FastKML.Polygon) = GI.ncoord(GI.PolygonTrait(), g)
+_ncoord(g::FastKML.MultiGeometry) = GI.ncoord(GI.geomtrait(g), g)
+_ncoord(g) = 0
 
-# For MultiPolygonTrait
-GI.ngeom(::GI.MultiPolygonTrait, mg::FastKML.MultiGeometry) = length(mg.Geometries)
-GI.getgeom(::GI.MultiPolygonTrait, mg::FastKML.MultiGeometry, i::Integer) = mg.Geometries[i] # Returns FastKML.Polygon
-GI.ncoord(::GI.MultiPolygonTrait, mg::FastKML.MultiGeometry) =
-    (mg.Geometries === nothing || isempty(mg.Geometries)) ? 0 : GI.ncoord(GI.PolygonTrait(), mg.Geometries[1])
-
-# For MultiLineStringTrait
-GI.ngeom(::GI.MultiLineStringTrait, mg::FastKML.MultiGeometry) = length(mg.Geometries)
-GI.getgeom(::GI.MultiLineStringTrait, mg::FastKML.MultiGeometry, i::Integer) = mg.Geometries[i] # Returns FastKML.LineString
-GI.ncoord(::GI.MultiLineStringTrait, mg::FastKML.MultiGeometry) =
-    (mg.Geometries === nothing || isempty(mg.Geometries)) ? 0 : GI.ncoord(GI.LineStringTrait(), mg.Geometries[1])
-
-# For MultiPointTrait
-GI.ngeom(::GI.MultiPointTrait, mg::FastKML.MultiGeometry) = length(mg.Geometries)
-GI.getgeom(::GI.MultiPointTrait, mg::FastKML.MultiGeometry, i::Integer) = mg.Geometries[i] # Returns FastKML.Point
-GI.ncoord(::GI.MultiPointTrait, mg::FastKML.MultiGeometry) =
-    (mg.Geometries === nothing || isempty(mg.Geometries)) ? 0 : GI.ncoord(GI.PointTrait(), mg.Geometries[1])
-
-# For GeometryCollectionTrait (fallback)
-GI.ngeom(::GI.GeometryCollectionTrait, mg::FastKML.MultiGeometry) =
-    mg.Geometries === nothing ? 0 : length(mg.Geometries)
-GI.getgeom(::GI.GeometryCollectionTrait, mg::FastKML.MultiGeometry, i::Integer) = mg.Geometries[i]
-GI.ncoord(::GI.GeometryCollectionTrait, mg::FastKML.MultiGeometry) = # Dimension of the first element, or 0 if empty/mixed might be undefined
-    (mg.Geometries === nothing || isempty(mg.Geometries)) ? 0 : _ncoord(mg.Geometries[1])
-
-# Dimension of a geometry, 0 for a geometry without a GeoInterface trait: a Model or a track
-_ncoord(g) = (trait = GI.geomtrait(g); trait === nothing ? 0 : GI.ncoord(trait, g))
+# Methods for FastKML.MultiGeometry based on its dynamically determined trait, the same for
+# each trait. A collection takes the dimension of its first geometry, 0 if it has none.
+function _first_ncoord(mg)
+    geoms = mg.Geometries
+    return (geoms === nothing || isempty(geoms)) ? 0 : _ncoord(geoms[1])
+end
+for T in (GI.MultiPolygonTrait, GI.MultiLineStringTrait, GI.MultiPointTrait,
+          GI.GeometryCollectionTrait)
+    @eval begin
+        GI.ngeom(::$T, mg::FastKML.MultiGeometry) = _count(mg.Geometries)
+        GI.getgeom(::$T, mg::FastKML.MultiGeometry, i::Integer) = _at(mg.Geometries, mg, i)
+        GI.ncoord(::$T, mg::FastKML.MultiGeometry) = _first_ncoord(mg)
+    end
+end
 
 # --- Placemark feature helpers ---
 GI.isfeature(::FastKML.Placemark) = true
@@ -114,29 +121,45 @@ end
 GI.trait(::FastKML.Placemark) = GI.FeatureTrait()
 GI.geometry(p::FastKML.Placemark) = p.Geometry
 
-# --- Internal helper for Base.show ---
+# --- Internal helpers for Base.show ---
 function _get_geom_display_info(geom)
-    trait = GI.geomtrait(geom)
-    is_3d = false
-    coord_dim = 0
-    # This try-catch is a fallback for safety, ideally ncoord is always defined for valid trait-geom pairs
-    try
-        coord_dim = GI.ncoord(trait, geom)
-    catch e
-        # This might happen if a trait is returned for which ncoord isn't (or can't be)
-        # meaningfully defined for the underlying KML type directly.
-        # For display, we might infer from a sub-geometry if possible.
-        if geom isa FastKML.MultiGeometry && geom.Geometries !== nothing && !isempty(geom.Geometries)
-            first_sub_geom = geom.Geometries[1]
-            sub_trait = GI.geomtrait(first_sub_geom)
-            coord_dim = GI.ncoord(sub_trait, first_sub_geom) # Try ncoord of first sub-element
-        else
-            coord_dim = 0 # Default or error
-        end
-    end
-    is_3d = (coord_dim == 3)
-    return is_3d, coord_dim
+    coord_dim = _ncoord(geom)
+    return coord_dim == 3, coord_dim
 end
+
+# Summary of a geometry, from its type; the trait matters only for a MultiGeometry, whose
+# trait depends on its geometries
+_count_str(n, singular, plural) = "with $n " * (n == 1 ? singular : plural)
+function _summary(g::FastKML.Point, trait)
+    coords = g.coordinates
+    return coords === nothing ? "(empty)" : "($(join(coords, ", ")))"
+end
+function _summary(g::Union{FastKML.LineString, FastKML.LinearRing}, trait)
+    n = _count(g.coordinates)
+    return n == 0 ? _count_str(n, "part", "parts") : _count_str(n, "point", "points")
+end
+_summary(g::FastKML.Polygon, trait) =
+    _count_str(1 + _count(g.innerBoundaryIs), "ring", "rings")
+function _summary(g::FastKML.MultiGeometry, trait)
+    n = _count(g.Geometries)
+    trait isa GI.MultiPolygonTrait && return _count_str(n, "polygon", "polygons")
+    trait isa GI.MultiPointTrait && return _count_str(n, "point", "points")
+    trait isa GI.MultiLineStringTrait && return _count_str(n, "part", "parts")
+    return _count_str(n, "geometry", "geometries")
+end
+
+# Preview of the first two points of a line or of the outer ring of a polygon, "" if there
+# is none
+function _preview_points(points, prefix)
+    (points === nothing || isempty(points)) && return ""
+    n = length(points)
+    shown = ["($(join(points[i], " ")))" for i in 1:min(n, 2)]
+    return " (" * prefix * join(shown, ", ") * (n > length(shown) ? ", ..." : "") * ")"
+end
+_preview(g::Union{FastKML.LineString, FastKML.LinearRing}) =
+    _preview_points(g.coordinates, "")
+_preview(g::FastKML.Polygon) = _preview_points(g.outerBoundaryIs.coordinates, "outer: ")
+_preview(g) = ""
 
 # Enhanced show for geometries with DataFrame-aware coloring. It names the GeoInterface
 # trait, so it covers only the geometries that have one: a Model or a track keeps the
@@ -165,108 +188,24 @@ function Base.show(io::IO, g::TraitGeometry)
         print(io, trait_name_str, zm_suffix)
     end
     
-    # Summary information
-    summary_parts = String[]
-    
-    if trait isa GI.PointTrait
-        if g.coordinates !== nothing
-            coord_str = "($(join(g.coordinates, ", ")))"
-            push!(summary_parts, coord_str)  # No color in summary parts
-        else
-            push!(summary_parts, "(empty)")
-        end
-    elseif trait isa GI.AbstractCurveTrait || trait isa GI.AbstractPolygonTrait ||
-           trait isa GI.AbstractMultiPointTrait || trait isa GI.AbstractMultiCurveTrait ||
-           trait isa GI.AbstractMultiPolygonTrait
-        n = GI.ngeom(trait, g)
-        item_name_singular = "part"
-        item_name_plural = "parts"
-        
-        # Determine specific item names
-        if n > 0
-            local first_sub_geom_obj
-            try
-                first_sub_geom_obj = GI.getgeom(trait, g, 1)
-            catch
-                first_sub_geom_obj = nothing
-            end
-            
-            if trait isa GI.MultiPolygonTrait || trait isa GI.PolygonTrait
-                item_name_singular = "ring"; item_name_plural = "rings"
-                if trait isa GI.MultiPolygonTrait && first_sub_geom_obj isa FastKML.Polygon
-                    item_name_singular = "polygon"
-                    item_name_plural = "polygons"
-                end
-            elseif trait isa GI.MultiCurveTrait || trait isa GI.LineStringTrait || trait isa GI.LinearRingTrait
-                item_name_singular = "point"; item_name_plural = "points"
-                if trait isa GI.MultiCurveTrait && first_sub_geom_obj isa FastKML.LineString
-                    item_name_singular = "linestring"
-                    item_name_plural = "linestrings"
-                end
-            elseif trait isa GI.MultiPointTrait
-                item_name_singular = "point"; item_name_plural = "points"
-            end
-        end
-        
-        count_str = "with $n " * (n == 1 ? item_name_singular : item_name_plural)
-        push!(summary_parts, count_str)  # No color in summary parts
-    elseif trait isa GI.GeometryCollectionTrait
-        n = GI.ngeom(trait, g)
-        count_str = "with $n " * (n == 1 ? "geometry" : "geometries")
-        push!(summary_parts, count_str)  # No color in summary parts
-    end
-    
-    if !isempty(summary_parts)
+    # Summary information, from the type of the geometry
+    summary = _summary(g, trait)
+    if !isempty(summary)
         # Print the summary with optional color on the whole thing
         if use_color
-            printstyled(io, " ", join(summary_parts, ", "); color = :green)
+            printstyled(io, " ", summary; color = :green)
         else
-            print(io, " ", join(summary_parts, ", "))
+            print(io, " ", summary)
         end
     end
-    
+
     # Preview coordinates
-    preview_pt_strings = String[]
-    if (trait isa GI.LineStringTrait || trait isa GI.LinearRingTrait) &&
-       hasfield(typeof(g), :coordinates) && g.coordinates !== nothing && GI.ngeom(trait, g) > 0
-        coords_to_show = min(GI.ngeom(trait, g), 2)
-        for i in 1:coords_to_show
-            pt_obj = GI.getgeom(trait, g, i)
-            if hasfield(typeof(pt_obj), :coordinates) && pt_obj.coordinates !== nothing
-                push!(preview_pt_strings, "($(join(pt_obj.coordinates, " ")))")
-            end
-        end
-        
-        if !isempty(preview_pt_strings)
-            preview_str = " (" * join(preview_pt_strings, ", ") * 
-                         (GI.ngeom(trait, g) > length(preview_pt_strings) ? ", ..." : "") * ")"
-            if use_color
-                printstyled(io, preview_str; color = :light_gray)
-            else
-                print(io, preview_str)
-            end
-        end
-    elseif trait isa GI.PolygonTrait && GI.ngeom(trait, g) > 0
-        outer_ring_obj = GI.getgeom(trait, g, 1)
-        if outer_ring_obj isa FastKML.LinearRing && hasfield(typeof(outer_ring_obj), :coordinates) && 
-           outer_ring_obj.coordinates !== nothing && GI.ngeom(GI.LinearRingTrait(), outer_ring_obj) > 0
-            coords_to_show = min(GI.ngeom(GI.LinearRingTrait(), outer_ring_obj), 2)
-            for i in 1:coords_to_show
-                pt_obj = GI.getgeom(GI.LinearRingTrait(), outer_ring_obj, i)
-                if hasfield(typeof(pt_obj), :coordinates) && pt_obj.coordinates !== nothing
-                    push!(preview_pt_strings, "($(join(pt_obj.coordinates, " ")))")
-                end
-            end
-            
-            if !isempty(preview_pt_strings)
-                preview_str = " (outer: " * join(preview_pt_strings, ", ") * 
-                             (GI.ngeom(GI.LinearRingTrait(), outer_ring_obj) > length(preview_pt_strings) ? ", ..." : "") * ")"
-                if use_color
-                    printstyled(io, preview_str; color = :light_gray)
-                else
-                    print(io, preview_str)
-                end
-            end
+    preview_str = _preview(g)
+    if !isempty(preview_str)
+        if use_color
+            printstyled(io, preview_str; color = :light_gray)
+        else
+            print(io, preview_str)
         end
     end
 end
