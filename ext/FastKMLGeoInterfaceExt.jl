@@ -90,7 +90,10 @@ GI.ngeom(::GI.GeometryCollectionTrait, mg::FastKML.MultiGeometry) =
     mg.Geometries === nothing ? 0 : length(mg.Geometries)
 GI.getgeom(::GI.GeometryCollectionTrait, mg::FastKML.MultiGeometry, i::Integer) = mg.Geometries[i]
 GI.ncoord(::GI.GeometryCollectionTrait, mg::FastKML.MultiGeometry) = # Dimension of the first element, or 0 if empty/mixed might be undefined
-    (mg.Geometries === nothing || isempty(mg.Geometries)) ? 0 : GI.ncoord(GI.geomtrait(mg.Geometries[1]), mg.Geometries[1])
+    (mg.Geometries === nothing || isempty(mg.Geometries)) ? 0 : _ncoord(mg.Geometries[1])
+
+# Dimension of a geometry, 0 for a geometry without a GeoInterface trait: a Model or a track
+_ncoord(g) = (trait = GI.geomtrait(g); trait === nothing ? 0 : GI.ncoord(trait, g))
 
 # --- Placemark feature helpers ---
 GI.isfeature(::FastKML.Placemark) = true

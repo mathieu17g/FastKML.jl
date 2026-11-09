@@ -157,6 +157,10 @@ end
                        (FastKML.gx_MultiTrack, "gx_MultiTrack: [<gx:MultiTrack>]"))
         @test GeoInterface.geomtrait(T()) === nothing
         @test sprint(show, T()) == shown
+        # A collection takes the dimension of its first geometry: 0 for such a geometry.
+        mg = MultiGeometry(Geometries = Geometry[T()])
+        @test GeoInterface.ncoord(mg) == 0
+        @test sprint(show, mg) == "GeometryCollection with 1 geometry"
     end
 end
 
