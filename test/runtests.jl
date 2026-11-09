@@ -12,6 +12,7 @@ using StaticArrays  # Add this import
 using ZipArchives
 import InteractiveUtils
 import REPL  # loads FastKMLREPLExt
+import Makie  # loads FastKMLMakieExt; not `using`: Makie also exports `Point` and `Camera`
 
 
 
@@ -1272,6 +1273,63 @@ end
         """
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "true true"
+end
+
+@testset "Makie extension" begin
+    # Loading Makie loads the extension. The plots are 2D: the altitude of a point is
+    # dropped, and an empty geometry gives one NaN point. A plot builds without a backend.
+    ext = Base.get_extension(FastKML, :FastKMLMakieExt)
+    @test ext !== nothing
+    P2 = Makie.Point2f
+    GB = Makie.GeometryBasics
+    outer = [SVector(0.0, 0.0), SVector(4.0, 0.0), SVector(4.0, 4.0), SVector(0.0, 0.0)]
+    hole = [SVector(1.0, 1.0), SVector(2.0, 1.0), SVector(2.0, 2.0), SVector(1.0, 1.0)]
+    outer2 = [P2(0, 0), P2(4, 0), P2(4, 4), P2(0, 0)]
+    hole2 = [P2(1, 1), P2(2, 1), P2(2, 2), P2(1, 1)]
+    pt = Point(coordinates = SVector(1.0, 2.0))
+    pt3 = Point(coordinates = SVector(1.0, 2.0, 3.0))
+    ls = LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0)])
+    ring = LinearRing(coordinates = outer)
+    pg = Polygon(outerBoundaryIs = LinearRing(coordinates = outer))
+    pgh = Polygon(outerBoundaryIs = LinearRing(coordinates = outer),
+                  innerBoundaryIs = [LinearRing(coordinates = hole)])
+    mg = MultiGeometry(Geometries = Geometry[pt, ls, pgh])
+
+    @test Makie.plottype(pt) == Makie.Scatter
+    @test Makie.plottype(ls) == Makie.Lines
+    @test Makie.plottype(ring) == Makie.Lines
+    @test Makie.plottype(pg) == Makie.Poly
+    @test Makie.plottype(mg) == ext.KMLMultiGeom
+
+    @test Makie.convert_arguments(Makie.Scatter, pt) == ([P2(1, 2)],)
+    @test Makie.convert_arguments(Makie.Scatter, pt3) == ([P2(1, 2)],)
+    @test Makie.convert_arguments(Makie.Lines, ls) == ([P2(0, 0), P2(1, 1)],)
+    @test Makie.convert_arguments(Makie.Lines, ring) == (outer2,)
+    @test Makie.convert_arguments(Makie.Poly, pg) == (outer2,)
+    @test Makie.convert_arguments(Makie.Poly, pgh) == (GB.Polygon(outer2, [hole2]),)
+    for (P, g) in ((Makie.Scatter, Point()), (Makie.Lines, LineString()),
+                   (Makie.Lines, LinearRing()), (Makie.Poly, Polygon()))
+        @test isequal(Makie.convert_arguments(P, g), ([P2(NaN, NaN)],))
+    end
+
+    # In a vector, empty geometries are left out, and each polygon, with or without holes,
+    # becomes one GeometryBasics polygon.
+    points = [pt, pt3, Point()]
+    @test Makie.convert_arguments(Makie.Scatter, points) == ([P2(1, 2), P2(1, 2)],)
+    lines = Union{LineString, LinearRing}[ls, ring, LineString()]
+    @test Makie.convert_arguments(Makie.Lines, lines) == ([[P2(0, 0), P2(1, 1)], outer2],)
+    polys = only(Makie.convert_arguments(Makie.Poly, [pg, pgh, Polygon()]))
+    @test polys isa Vector{GB.Polygon{2, Float32}}
+    @test polys == [GB.Polygon(outer2), GB.Polygon(outer2, [hole2])]
+
+    fig = Makie.Figure()
+    ax = Makie.Axis(fig[1, 1])
+    p = Makie.plot!(ax, mg)
+    @test p isa ext.KMLMultiGeom
+    @test p.plots[1] isa Makie.Scatter
+    @test p.plots[2] isa Makie.Lines
+    @test p.plots[3] isa Makie.Poly
+    @test Makie.poly!(ax, [pg, pgh]) isa Makie.Poly
 end
 
 @testset "layer=:all single-pass extraction" begin
