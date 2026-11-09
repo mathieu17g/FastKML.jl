@@ -135,8 +135,12 @@ function _get_geom_display_info(geom)
     return is_3d, coord_dim
 end
 
-# Enhanced show for geometries with DataFrame-aware coloring
-function Base.show(io::IO, g::FastKML.Geometry)
+# Enhanced show for geometries with DataFrame-aware coloring. It names the GeoInterface
+# trait, so it covers only the geometries that have one: a Model or a track keeps the
+# display of FastKML.
+const TraitGeometry = Union{FastKML.Point, FastKML.LineString, FastKML.LinearRing,
+                            FastKML.Polygon, FastKML.MultiGeometry}
+function Base.show(io::IO, g::TraitGeometry)
     trait = GI.geomtrait(g)
     trait_name_str = replace(string(nameof(typeof(trait))), "Trait" => "")
     

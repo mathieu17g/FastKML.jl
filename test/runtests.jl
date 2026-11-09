@@ -148,6 +148,16 @@ end
     code = "using FastKML, GeoInterface; print(convert(String, GeoInterface.crs(Point(coordinates = (1.0, 2.0)))))"
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "EPSG:4326"
+
+    # The extension displays a geometry by its GeoInterface trait. A geometry without one,
+    # such as a model or a track, keeps the display of FastKML.
+    @test sprint(show, Point(coordinates = SVector(1.0, 2.0))) == "Point (1.0, 2.0)"
+    for (T, shown) in ((FastKML.Model, "Model: [<Model>]"),
+                       (FastKML.gx_Track, "gx_Track: [<gx:Track>]"),
+                       (FastKML.gx_MultiTrack, "gx_MultiTrack: [<gx:MultiTrack>]"))
+        @test GeoInterface.geomtrait(T()) === nothing
+        @test sprint(show, T()) == shown
+    end
 end
 
 @testset "KMLFile roundtrip" begin
