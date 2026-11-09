@@ -97,7 +97,8 @@ function Makie.convert_arguments(P::Type{<:Lines}, lines::AbstractVector{<:Union
 end
 
 function Makie.convert_arguments(P::Type{<:Poly}, polys::AbstractVector{<:FastKML.Polygon})
-    all_polys = []
+    # One element type, which Poly accepts: a polygon without holes is a Polygon too
+    all_polys = Makie.GeometryBasics.Polygon{2, Float32}[]
     for poly in polys
         if !isnothing(poly.outerBoundaryIs) && !isnothing(poly.outerBoundaryIs.coordinates)
             outer_points = [Point2f(c[1], c[2]) for c in poly.outerBoundaryIs.coordinates]
@@ -109,7 +110,7 @@ function Makie.convert_arguments(P::Type{<:Poly}, polys::AbstractVector{<:FastKM
                 gb_poly = Makie.GeometryBasics.Polygon(outer_points, holes)
                 push!(all_polys, gb_poly)
             else
-                push!(all_polys, outer_points)
+                push!(all_polys, Makie.GeometryBasics.Polygon(outer_points))
             end
         end
     end
