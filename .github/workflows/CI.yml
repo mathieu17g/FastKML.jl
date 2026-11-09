@@ -35,10 +35,13 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
 
   downgrade:
-    # The lowest versions that the [compat] bounds allow for the dependencies, chosen by
-    # Resolver.jl; the weak dependencies of the extensions are installed by the tests, not
-    # lowered. From Julia 1.12, Pkg.test keeps these versions: julia-downgrade-compat documents
-    # that earlier versions may resolve again when the tests have their own Project.toml.
+    # The lowest versions that the [compat] bounds allow, chosen by Resolver.jl for the
+    # package and its tests together, so that the weak dependencies the tests load are
+    # lowered too. forcedeps fails the job when a package does not get its lower bound, in
+    # Project.toml as in test/Project.toml: a test dependency that needs a newer version
+    # would otherwise raise it silently. Test is skipped, its version follows Julia's.
+    # From Julia 1.12, Pkg.test keeps these versions: julia-downgrade-compat documents that
+    # earlier versions may resolve again when the tests have their own Project.toml.
     # No cache: these versions differ from those of the test job.
     name: Julia 1 - ubuntu-latest - lowest compatible versions
     runs-on: ubuntu-latest
@@ -49,6 +52,10 @@ jobs:
         with:
           version: '1'
       - uses: julia-actions/julia-downgrade-compat@v2
+        with:
+          projects: '., test'
+          mode: forcedeps
+          skip: Test
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         with:
