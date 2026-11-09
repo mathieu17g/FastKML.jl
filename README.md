@@ -122,7 +122,7 @@ DataFrame(file; layer = "Placemarks")   # by name, or by number
 DataFrame(file; layer = :all)           # every layer
 ```
 
-With `GeoInterface` loaded, geometry types implement the [GeoInterface.jl](https://github.com/JuliaGeo/GeoInterface.jl) traits, so they interoperate with the broader Julia geospatial ecosystem (plotting via Makie, conversion to GeometryBasics, spatial joins, etc.).
+With `GeoInterface` loaded, geometry types implement the [GeoInterface.jl](https://github.com/JuliaGeo/GeoInterface.jl) traits, so they interoperate with the broader Julia geospatial ecosystem (plotting via Makie, conversion to GeometryBasics, spatial joins, etc.). `GeoInterface.crs` gives `EPSG:4326`, WGS 84 with the longitude first, as the KML standard defines.
 
 <br>
 

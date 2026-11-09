@@ -1,6 +1,7 @@
 using FastKML
 using DataFrames
 using Dates
+using GeoFormatTypes
 using GeoInterface
 using Logging
 using Tables
@@ -136,6 +137,16 @@ end
     props = GeoInterface.properties(placemark)
     @test props.name == "Test Placemark"
     @test props.description == "A test placemark"
+
+    # KML gives its coordinates in WGS 84, longitude first: `crs` is EPSG:4326, as GDAL and
+    # GeoFormatTypes take it for KML. A new process checks that `using GeoInterface` is
+    # enough: the extension also needs GeoFormatTypes, which GeoInterface loads.
+    @test GeoInterface.crs(Point(coordinates = SVector(0.0, 0.0))) == GeoFormatTypes.EPSG(4326)
+    @test GeoInterface.crs(p) == GeoFormatTypes.EPSG(4326)
+    @test GeoInterface.crs(placemark) == GeoFormatTypes.EPSG(4326)
+    code = "using FastKML, GeoInterface; print(convert(String, GeoInterface.crs(Point(coordinates = (1.0, 2.0)))))"
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    @test read(cmd, String) == "EPSG:4326"
 end
 
 @testset "KMLFile roundtrip" begin
