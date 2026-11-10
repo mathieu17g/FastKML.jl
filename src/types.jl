@@ -887,11 +887,12 @@ function Base.show(io::IO, o::T) where {names,T<:KMLElement{names}}
                    (get(io, :typeinfo, nothing) === Vector{Any})
     use_color = !in_dataframe && get(io, :color, false)
     
-    # Display type name
+    # Display the name of the type alone: Julia prints a type whose name is not imported
+    # with its modules, as `FastKML.Types.Placemark`
     if use_color
-        printstyled(io, T; color = :light_cyan)
+        printstyled(io, nameof(T); color = :light_cyan)
     else
-        print(io, T)
+        print(io, nameof(T))
     end
     
     # Display XML representation

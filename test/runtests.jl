@@ -72,6 +72,15 @@ end
 end
 
 @testset "Exported names" begin
+    # FastKML exports its entry points only: the two kinds of file, the table of placemarks,
+    # the coordinate and date types that fields hold, and its functions.
+    exported = (:KMLFile, :LazyKMLFile, :PlacemarkTable, :Coord2, :Coord3, :PartialDate,
+                :object, :children, :to_xml, :xml_children, :list_layers, :get_layer_names,
+                :get_num_layers, :coordinate_string, :dates,
+                :unwrap_single_part_multigeometry)
+    @test Set(filter(n -> n !== :FastKML && Base.isexported(FastKML, n), names(FastKML))) ==
+          Set(exported)
+
     # A name exported by both FastKML and Base, bound to different things, is ambiguous after
     # `using FastKML`: an error under Julia 1.13, a warning under 1.10.
     clashes = filter(names(FastKML)) do n
@@ -84,51 +93,80 @@ end
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "(2,)"
 
-    # Nor with XML.jl, which a KML user may load too. There, `Document` alone is bound to
-    # two things, a KML element here and a node type there: the README imports it by name.
+    # Nor with XML.jl, which a KML user may load too: `Document` is then the node type of
+    # XML.jl, and `children` one function for both packages.
     clashes = filter(names(FastKML)) do n
-        n !== :Document && Base.isexported(FastKML, n) && Base.isexported(XML, n) &&
+        Base.isexported(FastKML, n) && Base.isexported(XML, n) &&
             !(isdefined(FastKML, n) && getglobal(FastKML, n) === getglobal(XML, n))
     end
     @test isempty(clashes)
 
-    code = "using FastKML, XML; using FastKML: Document; print(Document === FastKML.Document, children === XML.children)"
+    code = "using FastKML, XML; print(Document === XML.Document, children === XML.children)"
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "truetrue"
 
-    # FastKML exports the types of its model and its enumerations, and not what only its
-    # own code needs: functions, tables, the macro that defines the enumerations, and the
-    # supertypes `NoAttributes` and `AbstractKMLEnum`. These keep a qualified name, such as
-    # `FastKML.typemap`.
+    # Nor with a `Point` that the session already has when FastKML is loaded: it stays what
+    # it was, and neither Julia nor FastKML prints a warning about it.
+    code = "struct Point end; using FastKML; print(Point === FastKML.Point)"
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    errors = tempname()
+    @test read(pipeline(cmd; stderr = errors), String) == "false"
+    @test !occursin("Point", read(errors, String))
+
+    # The types of KML elements and the enumerations are not exported, since other packages
+    # export a `Point`, a `Polygon`, a `Camera` or a `Document` too. They take the prefix of
+    # the module, as in `FastKML.Point`, or are imported by name, and from Julia 1.11 on
+    # FastKML declares them public. What only its own code needs is neither exported nor
+    # public: functions, tables, the macro that defines the enumerations, and the supertypes
+    # `NoAttributes` and `AbstractKMLEnum`.
     internal = (:NoAttributes, :AbstractKMLEnum)
     for m in (FastKML.Types, FastKML.Enums)
-        api = filter(n -> getglobal(m, n) isa Type && !(n in internal), names(m))
-        @test all(n -> Base.isexported(FastKML, n), api)
-        others = setdiff(names(m), api)
-        @test isempty(filter(n -> Base.isexported(FastKML, n), others))
+        types = filter(n -> getglobal(m, n) isa Type && !(n in internal), names(m))
+        prefixed = setdiff(types, exported)
+        @test !isempty(prefixed)
+        @test !any(n -> Base.isexported(FastKML, n), prefixed)
+        @test all(n -> getglobal(FastKML, n) === getglobal(m, n), prefixed)
+        others = setdiff(names(m), types)
+        @test !any(n -> Base.isexported(FastKML, n), others)
         @test all(n -> isdefined(FastKML, n), others)
+        if VERSION >= v"1.11"
+            @test all(n -> Base.ispublic(FastKML, n), prefixed)
+            @test !any(n -> Base.ispublic(FastKML, n), others)
+        end
     end
+end
+
+@testset "Display" begin
+    # An element and an enumeration display under the name of their type alone, whether that
+    # name is imported or not. Julia prints a type whose name is not imported with its
+    # modules, as `FastKML.Types.Placemark`.
+    @test sprint(show, FastKML.Placemark(id = "a")) == "Placemark: [<Placemark id=\"a\">]"
+    @test sprint(show, FastKML.gx_Tour()) == "gx_Tour: [<gx:Tour>]"
+    @test sprint(show, FastKML.Enums.shape("sphere")) == "shape: \"sphere\""
+    colored = sprint(show, FastKML.gx_Tour(); context = :color => true)
+    @test colored != "gx_Tour: [<gx:Tour>]"
+    @test replace(colored, r"\e\[[0-9;]*m" => "") == "gx_Tour: [<gx:Tour>]"
 end
 
 
 @testset "GeoInterface" begin
     # Use SVector for coordinates instead of tuples
-    @test GeoInterface.testgeometry(Point(coordinates = SVector(0.0, 0.0)))
-    @test GeoInterface.testgeometry(LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0)]))
-    @test GeoInterface.testgeometry(LinearRing(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0), SVector(2.0, 2.0)]))
+    @test GeoInterface.testgeometry(FastKML.Point(coordinates = SVector(0.0, 0.0)))
+    @test GeoInterface.testgeometry(FastKML.LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0)]))
+    @test GeoInterface.testgeometry(FastKML.LinearRing(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0), SVector(2.0, 2.0)]))
 
-    p = Polygon(
-        outerBoundaryIs = LinearRing(
+    p = FastKML.Polygon(
+        outerBoundaryIs = FastKML.LinearRing(
             coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0), SVector(2.0, 2.0), SVector(0.0, 0.0)],
         ),
         innerBoundaryIs = [
-            LinearRing(coordinates = [SVector(0.5, 0.5), SVector(0.7, 0.7), SVector(0.0, 0.0), SVector(0.5, 0.5)]),
+            FastKML.LinearRing(coordinates = [SVector(0.5, 0.5), SVector(0.7, 0.7), SVector(0.0, 0.0), SVector(0.5, 0.5)]),
         ],
     )
     @test GeoInterface.testgeometry(p)
 
     # Create a Placemark with some properties to avoid empty tuple issue
-    placemark = Placemark(name = "Test Placemark", description = "A test placemark", Geometry = p)
+    placemark = FastKML.Placemark(name = "Test Placemark", description = "A test placemark", Geometry = p)
     @test GeoInterface.testfeature(placemark)
 
     # Test that the geometry is correctly extracted
@@ -142,41 +180,41 @@ end
     # KML gives its coordinates in WGS 84, longitude first: `crs` is EPSG:4326, as GDAL and
     # GeoFormatTypes take it for KML. A new process checks that `using GeoInterface` is
     # enough: the extension also needs GeoFormatTypes, which GeoInterface loads.
-    @test GeoInterface.crs(Point(coordinates = SVector(0.0, 0.0))) == GeoFormatTypes.EPSG(4326)
+    @test GeoInterface.crs(FastKML.Point(coordinates = SVector(0.0, 0.0))) == GeoFormatTypes.EPSG(4326)
     @test GeoInterface.crs(p) == GeoFormatTypes.EPSG(4326)
     @test GeoInterface.crs(placemark) == GeoFormatTypes.EPSG(4326)
-    code = "using FastKML, GeoInterface; print(convert(String, GeoInterface.crs(Point(coordinates = (1.0, 2.0)))))"
+    code = "using FastKML, GeoInterface; print(convert(String, GeoInterface.crs(FastKML.Point(coordinates = (1.0, 2.0)))))"
     cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
     @test read(cmd, String) == "EPSG:4326"
 
     # The extension displays a geometry by its GeoInterface trait. A geometry without one,
     # such as a model or a track, keeps the display of FastKML.
-    @test sprint(show, Point(coordinates = SVector(1.0, 2.0))) == "Point (1.0, 2.0)"
+    @test sprint(show, FastKML.Point(coordinates = SVector(1.0, 2.0))) == "Point (1.0, 2.0)"
     for (T, shown) in ((FastKML.Model, "Model: [<Model>]"),
                        (FastKML.gx_Track, "gx_Track: [<gx:Track>]"),
                        (FastKML.gx_MultiTrack, "gx_MultiTrack: [<gx:MultiTrack>]"))
         @test GeoInterface.geomtrait(T()) === nothing
         @test sprint(show, T()) == shown
         # A collection takes the dimension of its first geometry: 0 for such a geometry.
-        mg = MultiGeometry(Geometries = Geometry[T()])
+        mg = FastKML.MultiGeometry(Geometries = FastKML.Geometry[T()])
         @test GeoInterface.ncoord(mg) == 0
         @test sprint(show, mg) == "GeometryCollection with 1 geometry"
     end
 
     # The display gives the trait, with Z for three dimensions, a count, and the first two
     # points of a line or of the outer ring of a polygon.
-    line = LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0),
-                                     SVector(2.0, 0.0)])
-    line3 = LineString(coordinates = [SVector(0.0, 0.0, 5.0), SVector(1.0, 1.0, 6.0)])
+    line = FastKML.LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0),
+                                             SVector(2.0, 0.0)])
+    line3 = FastKML.LineString(coordinates = [SVector(0.0, 0.0, 5.0), SVector(1.0, 1.0, 6.0)])
     square = [SVector(0.0, 0.0), SVector(4.0, 0.0), SVector(4.0, 4.0), SVector(0.0, 0.0)]
     @test sprint(show, line) == "LineString with 3 points ((0.0 0.0), (1.0 1.0), ...)"
     @test sprint(show, line3) == "LineString Z with 2 points ((0.0 0.0 5.0), (1.0 1.0 6.0))"
-    @test sprint(show, LineString()) == "LineString with 0 parts"
-    @test sprint(show, LinearRing(coordinates = square)) ==
+    @test sprint(show, FastKML.LineString()) == "LineString with 0 parts"
+    @test sprint(show, FastKML.LinearRing(coordinates = square)) ==
           "LinearRing with 4 points ((0.0 0.0), (4.0 0.0), ...)"
-    @test sprint(show, Polygon(outerBoundaryIs = LinearRing(coordinates = square))) ==
+    @test sprint(show, FastKML.Polygon(outerBoundaryIs = FastKML.LinearRing(coordinates = square))) ==
           "Polygon with 1 ring (outer: (0.0 0.0), (4.0 0.0), ...)"
-    lines = MultiGeometry(Geometries = Geometry[line, line3])
+    lines = FastKML.MultiGeometry(Geometries = FastKML.Geometry[line, line3])
     @test GeoInterface.geomtrait(lines) == GeoInterface.MultiLineStringTrait()
     @test sprint(show, lines) == "MultiLineString with 2 parts"
 
@@ -325,10 +363,11 @@ end
     @test [T for T in FastKML.all_concrete_subtypes(FastKML.Feature) if hasfield(T, :altitudeMode)] ==
           [FastKML.GroundOverlay]
     @test !hasfield(FastKML.gx_Track, :Icon)
-    @test_logs (:warn, r"Unhandled tag altitudeMode") FastKML.object(XML.parse(
-        "<Placemark><altitudeMode>absolute</altitudeMode></Placemark>", XML.Node)[1])
-    @test_logs (:warn, r"Could not assign .*Icon") FastKML.object(XML.parse(
-        "<gx:Track><Icon><href>track.png</href></Icon></gx:Track>", XML.Node)[1])
+    # The warning names the types by their name alone, as their display does.
+    @test_logs (:warn, r"Unhandled tag altitudeMode \(from XML <altitudeMode>\) for parent Placemark") FastKML.object(
+        XML.parse("<Placemark><altitudeMode>absolute</altitudeMode></Placemark>", XML.Node)[1])
+    @test_logs (:warn, r"Could not assign Icon \(from <Icon>\) to any field in gx_Track") FastKML.object(
+        XML.parse("<gx:Track><Icon><href>track.png</href></Icon></gx:Track>", XML.Node)[1])
 end
 
 @testset "Altitude modes" begin
@@ -434,6 +473,9 @@ end
             XML.parse("<$parent><$tag/></$parent>", XML.Node)[1])
         @test getfield(o, Symbol(tag)) === nothing
     end
+    # An empty element without a field is left out like any other, with the same warning.
+    @test_logs (:warn, r"No field named 'foo' \(or mapped 'foo'\) in Placemark for tag <foo>") FastKML.object(
+        XML.parse("<Placemark><foo/></Placemark>", XML.Node)[1])
 end
 
 @testset "Content warnings" begin
@@ -446,7 +488,8 @@ end
         <?xml version="1.0" encoding="UTF-8"?>
         <kml xmlns="http://www.opengis.net/kml/2.2"><Document>$(placemark^3)</Document></kml>"""
     @testset "$what" for (what, run, pattern) in (
-            ("read", () -> parse(KMLFile, document("<Placemark><foo>1</foo></Placemark>")), "No field named 'foo'"),
+            ("read", () -> parse(KMLFile, document("<Placemark><foo>1</foo></Placemark>")),
+                 "No field named 'foo' (or mapped 'foo') in Placemark for tag <foo>"),
             ("write", () -> write(IOBuffer(), parse(KMLFile, document(
                  "<Placemark><Metadata><a>1</a></Metadata><ExtendedData/></Placemark>"))), "Metadata"),
             ("DataFrame", () -> (path = tempname() * ".kml";
@@ -495,14 +538,14 @@ end
     # `coordinates` are single coordinate (2D or 3D)
     s = "<Point><coordinates>1,2,3</coordinates></Point>"
     p = FastKML.object(XML.parse(s, XML.Node)[1])
-    @test p isa Point
+    @test p isa FastKML.Point
     @test p.coordinates isa SVector{3,Float64}
     @test p.coordinates == SVector(1.0, 2.0, 3.0)
 
     # `coordinates` are vector of coordinates
     s = "<LineString><coordinates>1,2,3 4,5,6</coordinates></LineString>"
     ls = FastKML.object(XML.parse(s, XML.Node)[1])
-    @test ls isa LineString
+    @test ls isa FastKML.LineString
     @test ls.coordinates isa Vector{SVector{3,Float64}}
     @test length(ls.coordinates) == 2
     @test ls.coordinates[1] == SVector(1.0, 2.0, 3.0)
@@ -1027,6 +1070,10 @@ end
     @test !V.validate_geometry(FastKML.MultiGeometry(Geometries = nothing))[1]
     @test !V.validate_geometry(FastKML.MultiGeometry(Geometries = FastKML.Geometry[]))[1]
 
+    # ── validate_geometry on a geometry without a method of its own ──
+    @test (@test_logs (:warn, "No specific validation for Model") V.validate_geometry(FastKML.Model())) ==
+          (true, "")
+
     # ── validate_document_structure(::Document) ──
     valid_doc = FastKML.Document(Features = [
         FastKML.Placemark(name = "P", Geometry = FastKML.Point(coordinates = SVector(0.0, 0.0))),
@@ -1324,14 +1371,14 @@ end
     hole = [SVector(1.0, 1.0), SVector(2.0, 1.0), SVector(2.0, 2.0), SVector(1.0, 1.0)]
     outer2 = [P2(0, 0), P2(4, 0), P2(4, 4), P2(0, 0)]
     hole2 = [P2(1, 1), P2(2, 1), P2(2, 2), P2(1, 1)]
-    pt = Point(coordinates = SVector(1.0, 2.0))
-    pt3 = Point(coordinates = SVector(1.0, 2.0, 3.0))
-    ls = LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0)])
-    ring = LinearRing(coordinates = outer)
-    pg = Polygon(outerBoundaryIs = LinearRing(coordinates = outer))
-    pgh = Polygon(outerBoundaryIs = LinearRing(coordinates = outer),
-                  innerBoundaryIs = [LinearRing(coordinates = hole)])
-    mg = MultiGeometry(Geometries = Geometry[pt, ls, pgh])
+    pt = FastKML.Point(coordinates = SVector(1.0, 2.0))
+    pt3 = FastKML.Point(coordinates = SVector(1.0, 2.0, 3.0))
+    ls = FastKML.LineString(coordinates = [SVector(0.0, 0.0), SVector(1.0, 1.0)])
+    ring = FastKML.LinearRing(coordinates = outer)
+    pg = FastKML.Polygon(outerBoundaryIs = FastKML.LinearRing(coordinates = outer))
+    pgh = FastKML.Polygon(outerBoundaryIs = FastKML.LinearRing(coordinates = outer),
+                          innerBoundaryIs = [FastKML.LinearRing(coordinates = hole)])
+    mg = FastKML.MultiGeometry(Geometries = FastKML.Geometry[pt, ls, pgh])
 
     @test Makie.plottype(pt) == Makie.Scatter
     @test Makie.plottype(ls) == Makie.Lines
@@ -1345,18 +1392,18 @@ end
     @test Makie.convert_arguments(Makie.Lines, ring) == (outer2,)
     @test Makie.convert_arguments(Makie.Poly, pg) == (outer2,)
     @test Makie.convert_arguments(Makie.Poly, pgh) == (GB.Polygon(outer2, [hole2]),)
-    for (P, g) in ((Makie.Scatter, Point()), (Makie.Lines, LineString()),
-                   (Makie.Lines, LinearRing()), (Makie.Poly, Polygon()))
+    for (P, g) in ((Makie.Scatter, FastKML.Point()), (Makie.Lines, FastKML.LineString()),
+                   (Makie.Lines, FastKML.LinearRing()), (Makie.Poly, FastKML.Polygon()))
         @test isequal(Makie.convert_arguments(P, g), ([P2(NaN, NaN)],))
     end
 
     # In a vector, empty geometries are left out, and each polygon, with or without holes,
     # becomes one GeometryBasics polygon.
-    points = [pt, pt3, Point()]
+    points = [pt, pt3, FastKML.Point()]
     @test Makie.convert_arguments(Makie.Scatter, points) == ([P2(1, 2), P2(1, 2)],)
-    lines = Union{LineString, LinearRing}[ls, ring, LineString()]
+    lines = Union{FastKML.LineString, FastKML.LinearRing}[ls, ring, FastKML.LineString()]
     @test Makie.convert_arguments(Makie.Lines, lines) == ([[P2(0, 0), P2(1, 1)], outer2],)
-    polys = only(Makie.convert_arguments(Makie.Poly, [pg, pgh, Polygon()]))
+    polys = only(Makie.convert_arguments(Makie.Poly, [pg, pgh, FastKML.Polygon()]))
     @test polys isa Vector{GB.Polygon{2, Float32}}
     @test polys == [GB.Polygon(outer2), GB.Polygon(outer2, [hole2])]
 

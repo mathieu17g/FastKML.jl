@@ -112,7 +112,7 @@ function assign_field!(parent::Types.KMLElement, field_name::Symbol, value::Abst
     true_field_name = map_field_name(parent, field_name)
     
     if !hasfield(typeof(parent), true_field_name)
-        @content_warn (:no_field, nameof(typeof(parent)), String(original_tag)) "No field named '$field_name' (or mapped '$true_field_name') in $(typeof(parent)) for tag <$original_tag>"
+        @content_warn (:no_field, nameof(typeof(parent)), String(original_tag)) "No field named '$field_name' (or mapped '$true_field_name') in $(nameof(typeof(parent))) for tag <$original_tag>"
         return
     end
 
@@ -239,7 +239,7 @@ function assign_complex_object!(parent::Types.KMLElement, child_object::Types.KM
         end
     end
 
-    @content_warn (:assign, child_type, parent_type) "Could not assign $(child_type) (from <$original_tag>) to any field in $(parent_type)"
+    @content_warn (:assign, child_type, parent_type) "Could not assign $(nameof(child_type)) (from <$original_tag>) to any field in $(nameof(parent_type))"
 end
 
 """

@@ -38,27 +38,27 @@ using .TablesBridge: PlacemarkTable
 using .Utils: unwrap_single_part_multigeometry
 using .Navigation: children
 
-# Re-export public API
+# The exported names are the entry points: the two kinds of file, the table of placemarks,
+# the coordinate and date types that fields hold, and the functions
 export KMLFile, LazyKMLFile, object
 export children, to_xml, xml_children
 export unwrap_single_part_multigeometry
 export PlacemarkTable, list_layers, get_layer_names, get_num_layers
 export coordinate_string, Coord2, Coord3
-export dates
+export dates, PartialDate
 
-# Export the types of `Types`, but neither `NoAttributes`, the supertype of the elements
-# without attributes, nor its functions and tables, which keep a qualified name such as
-# `FastKML.typemap`
-for name in names(Types; all=false)
-    if getglobal(Types, name) isa Type && name != :NoAttributes
-        @eval export $name
-    end
-end
-
-# Export the enumerations, but neither their supertype nor the macro that defines them
-for name in names(Enums; all=false)
-    if getglobal(Enums, name) isa Type && name != :AbstractKMLEnum
-        @eval export $name
+# The types of KML elements and the enumerations are not exported, since other packages
+# export a `Point`, a `Polygon`, a `Camera` or a `Document` too: they take the prefix of the
+# module, as in `FastKML.Point`, and are declared public. Julia 1.10 has no `public` keyword
+# and fails to parse it, hence the expression. `NoAttributes`, the supertype of the elements
+# without attributes, `AbstractKMLEnum`, and the functions, tables and macro of both modules
+# are for FastKML's own code.
+@static if VERSION >= v"1.11.0-DEV.469"
+    for (m, internal) in ((Types, :NoAttributes), (Enums, :AbstractKMLEnum))
+        for name in names(m; all = false)
+            getglobal(m, name) isa Type && name != internal || continue
+            Base.isexported(@__MODULE__, name) || eval(Expr(:public, name))
+        end
     end
 end
 
@@ -85,74 +85,6 @@ Base.getindex(f::Folder, i) = (fs = f.Features; fs === nothing ? throw(BoundsErr
 function __init__()
     # Register error hints for KMZ support
     Base.Experimental.register_error_hint(IO._read_kmz_file_from_path_error_hinter, ErrorException)
-
-    # Only check for conflicts when not precompiling
-    # Use generating_output if available (Julia 1.11+), otherwise check ccall
-    is_precompiling = if isdefined(Base, :generating_output)
-        Base.generating_output()
-    else
-        # Julia 1.10 and earlier: check if we're in precompilation
-        ccall(:jl_generating_output, Cint, ()) != 0
-    end
-    
-    if !is_precompiling
-        check_geometry_conflicts()
-    end
-end
-
-function check_geometry_conflicts()
-    geometry_types = [:Point, :LineString, :LinearRing, :Polygon, :MultiGeometry]
-    blocked_exports = Symbol[]
-    conflicts_with = Set{Symbol}()
-
-    for geom_type in geometry_types
-        if isdefined(Main, geom_type)
-            main_type = getfield(Main, geom_type)
-            kml_type = getfield(FastKML, geom_type)
-
-            # Check if Main's type is NOT KML's type
-            if main_type !== kml_type && !isa(main_type, Module)
-                push!(blocked_exports, geom_type)
-
-                # Try to identify source package
-                try
-                    # For types, use parentmodule directly
-                    source_module = parentmodule(main_type)
-                    if source_module !== Main && source_module !== Base && source_module !== Core
-                        push!(conflicts_with, nameof(source_module))
-                    end
-                catch
-                    # If that fails, try checking methods
-                    meths = methods(main_type)
-                    if !isempty(meths)
-                        for m in meths
-                            mod = parentmodule(m.module)
-                            if mod !== Main && mod !== Base && mod !== Core
-                                push!(conflicts_with, nameof(mod))
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    if !isempty(blocked_exports)
-        conflict_source = isempty(conflicts_with) ? "" : " (from $(join(collect(conflicts_with), ", ")))"
-
-        @warn """
-        FastKML.jl exports were blocked by existing definitions$conflict_source: $(join(blocked_exports, ", "))
-
-        To use FastKML's geometry types:
-        • Import FastKML first:
-          using FastKML
-          using GeometryBasics  # or other geometry packages
-        • Or use qualified names:
-          FastKML.Point(coordinates=(1.0, 2.0))
-          df = DataFrame(kml_file)  # Other FastKML functions work normally
-        """
-    end
 end
 
 end # module FastKML

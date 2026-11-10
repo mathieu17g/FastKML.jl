@@ -10,7 +10,9 @@ using XML
 # ─── Abstract base type for all KML enums ────────────────────────────────────
 abstract type AbstractKMLEnum end
 
-Base.show(io::IO, o::AbstractKMLEnum) = print(io, typeof(o), ": ", repr(o.value))
+# The name of the type alone: Julia prints a type whose name is not imported with its
+# modules, as `FastKML.Enums.shape`
+Base.show(io::IO, o::AbstractKMLEnum) = print(io, nameof(typeof(o)), ": ", repr(o.value))
 Base.convert(::Type{T}, x::String) where {T<:AbstractKMLEnum} = T(x)
 Base.string(o::AbstractKMLEnum) = o.value
 
