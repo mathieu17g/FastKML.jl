@@ -229,7 +229,7 @@ function add_element!(parent::KMLElement, child_xml_node::XMLAnyNode)
             return
         end
 
-        @content_warn (:unhandled_child, field_name_sym, nameof(typeof(parent))) "Unhandled tag $field_name_sym (from XML <$(XML.tag(child_xml_node))>) for parent $(typeof(parent))"
+        @content_warn (:unhandled_child, field_name_sym, nameof(typeof(parent))) "Unhandled tag $field_name_sym (from XML <$(XML.tag(child_xml_node))>) for parent $(nameof(typeof(parent)))"
     end
 end
 
@@ -240,7 +240,7 @@ end
 function _assign_empty!(parent::KMLElement, field_name_sym::Symbol, tag::AbstractString)
     field = map_field_name(parent, field_name_sym)
     if !hasfield(typeof(parent), field)
-        @content_warn (:no_field, nameof(typeof(parent)), String(tag)) "No field named '$field_name_sym' (or mapped '$field') in $(typeof(parent)) for tag <$tag>"
+        @content_warn (:no_field, nameof(typeof(parent)), String(tag)) "No field named '$field_name_sym' (or mapped '$field') in $(nameof(typeof(parent))) for tag <$tag>"
         return
     end
     T = typemap(typeof(parent))[field]

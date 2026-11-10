@@ -67,8 +67,3 @@ list_layers(lazy_kml)
 # Extract data without loading entire file
 df = DataFrame(lazy_kml; layer=1)
 filter(row -> !ismissing(row.geometry), df) |> display
-
-# Handle geometry type conflicts gracefully
-using GeometryBasics  # Defines Point, LineString, etc.
-using FastKML  # Warns about conflicts and suggests solutions
-# Use FastKML.Point to disambiguate

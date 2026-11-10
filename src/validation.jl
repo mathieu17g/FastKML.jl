@@ -130,7 +130,7 @@ end
 
 function validate_geometry(geom::Geometry)
     # Fallback for other geometry types
-    @warn "No specific validation for $(typeof(geom))"
+    @warn "No specific validation for $(nameof(typeof(geom)))"
     return true, ""
 end
 

@@ -56,6 +56,7 @@ Build a document programmatically:
 
 ```julia
 using FastKML, StaticArrays
+using FastKML: Document, Placemark, Point
 
 file = KMLFile(
     Document(
